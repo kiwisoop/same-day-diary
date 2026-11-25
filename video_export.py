@@ -126,12 +126,12 @@ def _validate_card(item, i):
         if not isinstance(value, str) or len(value) > limit or '\n' in value or '\r' in value:
             raise ValueError(f'카드 {i}의 {field}를 확인해 주세요')
     if not item.get('title', '').strip():
-        raise ValueError(f'카드 {i}의 제목이 비었습니다')
+        raise ValueError(f'카드 {i}의 제목이 비었어요')
     seconds = item.get('seconds')
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not CARD_SECONDS[0] <= seconds <= CARD_SECONDS[1]:
-        raise ValueError(f'카드 {i}의 시간은 {CARD_SECONDS[0]}~{CARD_SECONDS[1]}초여야 합니다')
+        raise ValueError(f'카드 {i}의 시간은 {CARD_SECONDS[0]}~{CARD_SECONDS[1]}초여야 해요')
     if round(seconds * 24) != seconds * 24:
-        raise ValueError(f'카드 {i}의 시간은 1/24초 단위여야 합니다')
+        raise ValueError(f'카드 {i}의 시간은 1/24초 단위여야 해요')
 
 
 NARRATION_START = 0.3  # The voice starts with the first caption phrase.
@@ -185,7 +185,7 @@ def _create_ending(item, output_video, font_path, temp_dir, index):
                              '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p', str(output_video)],
                             capture_output=True, timeout=180)
     if result.returncode:
-        raise ValueError('마무리 장면을 만들지 못했습니다.')
+        raise ValueError('마무리 장면을 만들지 못했어요.')
 
 
 def _create_card(item, output_video, font_path, temp_dir, index):
@@ -208,20 +208,20 @@ def _create_card(item, output_video, font_path, temp_dir, index):
                              '-preset', 'fast', '-pix_fmt', 'yuv420p', str(output_video)],
                             capture_output=True, timeout=120)
     if result.returncode:
-        raise ValueError('제목 카드를 만들지 못했습니다.')
+        raise ValueError('제목 카드를 만들지 못했어요.')
 
 
 def _validate_items(items):
     """항목 검증"""
     if not isinstance(items, list):
-        raise ValueError('items는 리스트여야 합니다')
+        raise ValueError('items는 리스트여야 해요')
     if any(not isinstance(item, dict) for item in items):
-        raise ValueError('각 항목은 dict여야 합니다')
+        raise ValueError('각 항목은 dict여야 해요')
     cards = [item for item in items if item.get('card') is True]
     scenes = [item for item in items if item.get('card') is not True]
     # Title/year cards are not scenes: the 8-scene limit applies to diary pictures only.
     if not 1 <= len(scenes) <= 8 or len(cards) > MAX_CARDS:
-        raise ValueError(f'장면은 1~8개, 카드는 {MAX_CARDS}개 이하여야 합니다')
+        raise ValueError(f'장면은 1~8개, 카드는 {MAX_CARDS}개 이하여야 해요')
 
     for i, item in enumerate(items):
         if item.get('card') is True:
@@ -229,33 +229,33 @@ def _validate_items(items):
             continue
 
         if 'date' not in item:
-            raise ValueError(f'항목 {i}에 date가 없습니다')
+            raise ValueError(f'항목 {i}에 date가 없어요')
         if not _validate_date(item['date']):
-            raise ValueError(f'항목 {i}의 날짜 형식이 올바르지 않습니다')
+            raise ValueError(f'항목 {i}의 날짜 형식이 올바르지 않아요')
         
         if 'caption' not in item:
-            raise ValueError(f'항목 {i}에 caption이 없습니다')
+            raise ValueError(f'항목 {i}에 caption이 없어요')
         caption = item['caption']
         if not isinstance(caption, str):
-            raise ValueError(f'항목 {i}의 caption은 문자열이어야 합니다')
+            raise ValueError(f'항목 {i}의 caption은 문자열이어야 해요')
         if len(caption) > 64:
-            raise ValueError(f'항목 {i}의 caption이 64자를 초과합니다')
+            raise ValueError(f'항목 {i}의 caption이 64자를 초과해요')
         
         if 'image_path' not in item:
-            raise ValueError(f'항목 {i}에 image_path가 없습니다')
+            raise ValueError(f'항목 {i}에 image_path가 없어요')
         image_path = Path(item['image_path'])
         if not image_path.exists():
-            raise ValueError(f'항목 {i}의 이미지 파일이 없습니다')
+            raise ValueError(f'항목 {i}의 이미지 파일이 없어요')
         if not image_path.is_file():
-            raise ValueError(f'항목 {i}의 image_path는 파일이어야 합니다')
+            raise ValueError(f'항목 {i}의 image_path는 파일이어야 해요')
         if item.get('clip') is not None:
             clip = Path(item['clip'])
             if clip.suffix.lower() != '.mp4' or not clip.is_file():
-                raise ValueError(f'항목 {i}의 장면 영상 파일이 없습니다')
+                raise ValueError(f'항목 {i}의 장면 영상 파일이 없어요')
         if item.get('narration') is not None:
             voice = Path(item['narration'])
             if voice.suffix.lower() != '.wav' or not voice.is_file():
-                raise ValueError(f'항목 {i}의 내레이션 음성 파일이 없습니다')
+                raise ValueError(f'항목 {i}의 내레이션 음성 파일이 없어요')
 
 def _wrap_caption(text, max_width=36):
     """자막 줄바꿈 (한글 18자 기준, 최대 4줄)"""
@@ -475,7 +475,7 @@ def _create_shorts_scene(image_path, date_str, caption, output_video, font_path,
                              '-preset', 'fast', '-pix_fmt', 'yuv420p', str(output_video)],
                             capture_output=True, timeout=180)
     if result.returncode:
-        raise ValueError('쇼츠 장면을 만들지 못했습니다.')
+        raise ValueError('쇼츠 장면을 만들지 못했어요.')
 
 
 MUSIC_DIR = Path(__file__).parent / 'assets'
@@ -532,9 +532,9 @@ def narration_filter(duration, voices, first_input, switch_at=None):
 def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_music=None):
     """영상 생성. switch_music: the ending card (make_ending) starts with this track instead."""
     if not _check_ffmpeg():
-        raise ValueError('ffmpeg가 설치되지 않았습니다')
+        raise ValueError('ffmpeg가 설치되지 않았어요')
     if not _check_ffprobe():
-        raise ValueError('ffprobe가 설치되지 않았습니다')
+        raise ValueError('ffprobe가 설치되지 않았어요')
     
     _validate_items(items)
     
@@ -542,11 +542,11 @@ def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_m
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     if output_path.exists():
-        raise ValueError('기존 영상 파일을 덮어쓰지 않습니다')
+        raise ValueError('기존 영상 파일을 덮어쓰지 않아요')
     
     font_path = _find_korean_font()
     if not font_path:
-        raise ValueError('한글 자막용 시스템 글꼴을 찾지 못했습니다')
+        raise ValueError('한글 자막용 시스템 글꼴을 찾지 못했어요')
     
     # 배경음악: the chosen track, plus an optional ending track that crossfades in at the ending montage.
     if music not in MUSIC or (switch_music is not None and switch_music not in MUSIC):
@@ -559,7 +559,7 @@ def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_m
             switch_at = sum(item_duration(item, shorts) for item in items[:ending[0]])
             tracks.append(MUSIC_DIR / MUSIC[switch_music][0])
     if any(not track.is_file() for track in tracks):
-        raise ValueError('배경음악 파일이 없습니다')
+        raise ValueError('배경음악 파일이 없어요')
     credits = ' / '.join(dict.fromkeys(MUSIC[name][2] for name in ([music] + ([switch_music] if switch_at is not None else []))))
     # Narration (shorts only): one WAV per scene, starting with that scene.
     voices, voice_files, start = [], [], 0
@@ -638,7 +638,7 @@ def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_m
                 raise ValueError('영상 생성 실패')
             
             if not output_path.exists():
-                raise ValueError('영상 파일이 생성되지 않았습니다')
+                raise ValueError('영상 파일이 생성되지 않았어요')
         
         except subprocess.TimeoutExpired:
             if output_path.exists():
@@ -652,4 +652,4 @@ def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_m
                     pass
             if isinstance(e, ValueError):
                 raise
-            raise ValueError('영상 생성에 실패했습니다. 원본 기록은 유지됩니다.')
+            raise ValueError('영상 생성에 실패했어요. 원본 기록은 유지돼요.')

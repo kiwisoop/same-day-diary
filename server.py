@@ -63,7 +63,7 @@ def create_image(db, data):
     if data.get('consent') is not True:
         raise ValueError('일기 전송과 이미지 생성 비용 안내에 동의해 주세요.')
     if not isinstance(data.get('regenerate', False), bool):
-        raise ValueError('이미지 요청 형식이 올바르지 않습니다.')
+        raise ValueError('이미지 요청 형식이 올바르지 않아요.')
     if not IMAGE_LOCK.acquire(blocking=False):
         return 409, {'error': '다른 그림을 생성하고 있어요. 완료될 때까지 기다려 주세요.'}
     try:
@@ -71,13 +71,13 @@ def create_image(db, data):
         if not entry['content']:
             raise ValueError('먼저 일기를 저장해 주세요.')
         if data.get('content_hash') != entry['content_hash']:
-            return 409, {'error': '일기가 변경됐습니다. 최신 기록을 확인해 주세요.'}
+            return 409, {'error': '일기가 변경됐어요. 최신 기록을 확인해 주세요.'}
         previous = media_file(db, entry['image_path'])
         if previous and previous.is_file() and not entry['image_stale'] and not data.get('regenerate', False):
             return 200, {'entry': entry, 'cached': True, 'credits_charged': 0}
         body, extension, credits = image_api.generate_image(entry['date'], entry['content'])
         if extension not in ('png', 'jpg', 'webp'):
-            raise ValueError('지원하지 않는 이미지 형식입니다.')
+            raise ValueError('지원하지 않는 이미지 형식이에요.')
         folder = Path(db.db_path).parent / 'images'
         folder.mkdir(mode=0o700, exist_ok=True)
         name = uuid.uuid4().hex + '.' + extension
@@ -90,7 +90,7 @@ def create_image(db, data):
             url = '/media/' + name
             if not db.attach_image(entry['date'], entry['content_hash'], url):
                 destination.unlink()
-                return 409, {'error': '생성 중 일기가 바뀌거나 삭제되어 그림을 연결하지 않았습니다. 원래 기록은 유지됩니다.'}
+                return 409, {'error': '생성 중 일기가 바뀌거나 삭제되어 그림을 연결하지 않았어요. 원래 기록은 유지돼요.'}
         except Exception:
             if created:
                 destination.unlink(missing_ok=True)
@@ -108,7 +108,7 @@ def prepare_story(db, data):
     try:
         entry = db.get_diary(data.get('date'))
         if not entry['content'] or entry['content_hash'] != data.get('content_hash'):
-            return 409, {'error': '일기가 바뀌었습니다. 저장된 최신 일기를 확인해 주세요.'}
+            return 409, {'error': '일기가 바뀌었어요. 저장된 최신 일기를 확인해 주세요.'}
         key = 'shorts_story:' + entry['date']
         try:
             cached = json.loads(db.get_setting(key, 'null'))
@@ -123,7 +123,7 @@ def prepare_story(db, data):
                          'demo': cached.get('demo') is True}
         story = story_api.generate_story(entry['date'], entry['content'])
         if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
-            return 409, {'error': '구성 중 일기가 바뀌어 결과를 연결하지 않았습니다. 원본은 유지됩니다.'}
+            return 409, {'error': '구성 중 일기가 바뀌어 결과를 연결하지 않았어요. 원본은 유지돼요.'}
         db.set_setting(key, json.dumps({'version': STORY_VERSION, 'content_hash': entry['content_hash'],
                                        'captions': story['captions'], 'narration': story.get('narration'),
                                        'narrator': story.get('narrator'), 'others': story.get('others')}, ensure_ascii=False))
@@ -151,25 +151,25 @@ def create_scene(db, data):
         caption = story_api.validate_captions([data.get('caption')])[0]
         entry = db.get_diary(data.get('date'))
         if not entry['content'] or entry['content_hash'] != data.get('content_hash'):
-            return 409, {'error': '일기가 변경됐습니다. 저장된 내용을 확인해 주세요.'}
+            return 409, {'error': '일기가 변경됐어요. 저장된 내용을 확인해 주세요.'}
         return 200, {'cached': scene_image(db, entry, caption)[1] is not None}
     if data.get('consent') is not True:
         raise ValueError('장면 그림의 일기 전송과 생성 비용을 확인해 주세요.')
     caption = story_api.validate_captions([data.get('caption')])[0]
     entry = db.get_diary(data.get('date'))
     if not entry['content'] or entry['content_hash'] != data.get('content_hash'):
-        return 409, {'error': '일기가 변경됐습니다. 저장된 내용을 확인해 주세요.'}
+        return 409, {'error': '일기가 변경됐어요. 저장된 내용을 확인해 주세요.'}
     if not IMAGE_LOCK.acquire(blocking=False):
-        return 409, {'error': '다른 그림을 생성 중입니다.'}
+        return 409, {'error': '다른 그림을 생성 중이에요.'}
     try:
         url, file = scene_image(db, entry, caption)
         if file:
             return 200, {'url': url, 'cached': True, 'credits_charged': 0}
         body, extension, credits = image_api.generate_image(entry['date'], entry['content'], scene=caption)
         if extension not in ('png', 'jpg', 'webp'):
-            raise ValueError('지원하지 않는 이미지 형식입니다.')
+            raise ValueError('지원하지 않는 이미지 형식이에요.')
         if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
-            return 409, {'error': '생성 중 일기가 바뀌어 그림을 연결하지 않았습니다. 사용량을 확인해 주세요.'}
+            return 409, {'error': '생성 중 일기가 바뀌어 그림을 연결하지 않았어요. 사용량을 확인해 주세요.'}
         folder = Path(db.db_path).parent / 'images'
         folder.mkdir(mode=0o700, exist_ok=True)
         name = uuid.uuid4().hex + '.' + extension
@@ -230,7 +230,7 @@ def create_clip(db, data):
     caption = story_api.validate_captions([data.get('caption')])[0]
     entry = db.get_diary(data.get('date'))
     if not entry['content'] or entry['content_hash'] != data.get('content_hash'):
-        return 409, {'error': '일기가 변경됐습니다. 저장된 내용을 확인해 주세요.'}
+        return 409, {'error': '일기가 변경됐어요. 저장된 내용을 확인해 주세요.'}
     state = clip_state(db, entry, caption)
     if data.get('check_only') is True:
         return 200, {'cached': clip_file(db, entry, caption) is not None,
@@ -255,7 +255,7 @@ def create_clip(db, data):
             if status == 'completed':
                 body = video_api.download_clip(uri)
                 if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
-                    return 409, {'error': '생성 중 일기가 바뀌어 영상을 연결하지 않았습니다.'}
+                    return 409, {'error': '생성 중 일기가 바뀌어 영상을 연결하지 않았어요.'}
                 folder = Path(db.db_path).parent / 'clips'
                 folder.mkdir(mode=0o700, exist_ok=True)
                 name = uuid.uuid4().hex + '.mp4'
@@ -313,14 +313,14 @@ def create_three_year_video(db, data):
                 if entry['image_stale'] or not image:
                     raise ValueError('각 연도의 최신 수채화를 먼저 만들어 주세요.')
             if not image.is_file() or image.is_symlink():
-                raise ValueError('저장된 그림을 찾지 못했습니다.')
+                raise ValueError('저장된 그림을 찾지 못했어요.')
             item = {'date': entry['date'], 'caption': caption, 'image_path': image, 'spoken': spoken[index]}
             clip = clip_file(db, entry, caption)
             if clip:
                 item['clip'] = clip
             items.append(item)
     if any(db.get_diary(e['date'])['content_hash'] != e['content_hash'] for e in entries):
-        return 409, {'error': '구성 중 일기가 바뀌었습니다. 다시 확인해 주세요.'}
+        return 409, {'error': '구성 중 일기가 바뀌었어요. 다시 확인해 주세요.'}
     # Closing montage: the three years' watercolors side by side (already checked above, no new pictures).
     items.append(make_ending('같은 날, 세 해', [media_file(db, e['image_path']) for e in entries], [e['date'][:4] for e in entries]))
     return render_and_save_video(db, items, {e['date']: e['content_hash'] for e in entries}, 'three-year', True,
@@ -438,14 +438,14 @@ def create_video(db, data, shorts=False):
     seen = set()
     for item in selection:
         if not isinstance(item, dict):
-            raise ValueError('영상 선택 형식이 올바르지 않습니다.')
+            raise ValueError('영상 선택 형식이 올바르지 않아요.')
         entry = db.get_diary(item.get('date'))
         caption = captions[0] if shorts else item.get('caption')
         if entry['date'] in seen or not entry['content'] or not isinstance(caption, str) or len(caption) > 64:
             raise ValueError('일기 선택과 자막(64자 이내)을 확인해 주세요.')
         seen.add(entry['date'])
         if entry['content_hash'] != item.get('content_hash') or entry['image_stale']:
-            raise ValueError('선택한 일기가 변경됐거나 그림이 이전 내용입니다. 확인 후 다시 선택해 주세요.')
+            raise ValueError('선택한 일기가 변경됐거나 그림이 이전 내용이에요. 확인 후 다시 선택해 주세요.')
         image = media_file(db, entry['image_path'])
         if entry['image_path'] in FILES:
             image = ROOT / FILES[entry['image_path']][0]
@@ -526,16 +526,16 @@ class DiaryHandler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get('Content-Length', '0'))
         except ValueError:
-            raise ValueError('요청 길이가 올바르지 않습니다.')
+            raise ValueError('요청 길이가 올바르지 않아요.')
         if not 0 < length <= 65536:
-            self.reply(413, {'error': '요청이 비었거나 너무 큽니다.'})
+            self.reply(413, {'error': '요청이 비었거나 너무 커요.'})
             return None
         try:
             data = json.loads(self.rfile.read(length))
         except (ValueError, UnicodeError):
-            raise ValueError('요청 내용을 읽지 못했습니다.') from None
+            raise ValueError('요청 내용을 읽지 못했어요.') from None
         if not isinstance(data, dict):
-            raise ValueError('요청은 JSON 객체여야 합니다.')
+            raise ValueError('요청은 JSON 객체여야 해요.')
         return data
 
     def handle_request(self):
@@ -550,7 +550,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
             if self.command == 'GET' and re.fullmatch(r'/videos/[0-9a-f]{32}\.jpg', path):
                 poster = Path(Database().db_path).parent / 'videos' / path.rsplit('/', 1)[1]
                 if not poster.is_file() or poster.is_symlink():
-                    self.reply(404, {'error': '표지를 찾을 수 없습니다.'})
+                    self.reply(404, {'error': '표지를 찾을 수 없어요.'})
                 else:
                     self.reply(200, poster.read_bytes(), 'image/jpeg', {'Cache-Control': 'no-cache'})
                 return
@@ -561,7 +561,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                     db = Database()
                     video = Path(db.db_path).parent / 'videos' / path.rsplit('/',1)[1]
                 if not video.is_file() or video.is_symlink():
-                    self.reply(404, {'error':'영상을 찾을 수 없습니다.'})
+                    self.reply(404, {'error':'영상을 찾을 수 없어요.'})
                     return
                 size = video.stat().st_size
                 headers = {'Accept-Ranges': 'bytes'}
@@ -589,7 +589,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                 db = Database()
                 image = media_file(db, path)
                 if not image or not db.has_image(path) or not image.is_file() or image.is_symlink():
-                    self.reply(404, {'error': '그림을 찾을 수 없습니다.'})
+                    self.reply(404, {'error': '그림을 찾을 수 없어요.'})
                     return
                 mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp'}[image.suffix]
                 self.reply(200, image.read_bytes(), mime)
@@ -599,7 +599,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                 try:
                     body = (ROOT / filename).read_bytes()
                 except FileNotFoundError:
-                    self.reply(404, {'error': '앱 파일을 찾을 수 없습니다.'})
+                    self.reply(404, {'error': '앱 파일을 찾을 수 없어요.'})
                     return
                 self.reply(200, body, mime)
                 return
@@ -607,7 +607,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                       ('GET', '/api/diary'), ('POST', '/api/diary'),
                       ('DELETE', '/api/diary'), ('POST', '/api/demo'), ('POST', '/api/image'), ('GET', '/api/memories'), ('POST', '/api/video'), ('POST', '/api/shorts'), ('POST', '/api/shorts/story'), ('POST', '/api/shorts/scene'), ('POST', '/api/shorts/clip'), ('POST', '/api/three-year-video'), ('GET', '/api/videos')}
             if (self.command, path) not in routes:
-                self.reply(404, {'error': '페이지를 찾을 수 없습니다.'})
+                self.reply(404, {'error': '페이지를 찾을 수 없어요.'})
                 return
             data = self.read_json() if self.command == 'POST' else {}
             if data is None:
@@ -673,7 +673,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self.reply(400, {'error': str(error)})
         except Exception:
-            self.reply(500, {'error': '처리하지 못했습니다. 입력 내용은 그대로 두고 다시 시도해 주세요.'})
+            self.reply(500, {'error': '처리하지 못했어요. 입력 내용은 그대로 두고 다시 시도해 주세요.'})
 
     do_GET = handle_request
     do_POST = handle_request

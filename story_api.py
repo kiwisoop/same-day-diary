@@ -15,9 +15,9 @@ MAX_RESPONSE_SIZE = 262144
 
 def validate_captions(captions):
     if not isinstance(captions, list) or not 1 <= len(captions) <= 8:
-        raise ValueError('이야기의 장면 구성을 확인하지 못했습니다.')
+        raise ValueError('이야기의 장면 구성을 확인하지 못했어요.')
     if any(not isinstance(line, str) or not 1 <= len(line.strip()) <= 64 or '\n' in line.strip() or '\r' in line.strip() for line in captions):
-        raise ValueError('장면 문장의 길이나 형식을 확인하지 못했습니다. 자동 재요청하지 않았습니다.')
+        raise ValueError('장면 문장의 길이나 형식을 확인하지 못했어요. 자동 재요청하지 않았어요.')
     return [line.strip() for line in captions]
 
 
@@ -46,7 +46,7 @@ def generate_story(date_str, diary_text):
         if date.fromisoformat(date_str).isoformat() != date_str:
             raise ValueError()
     except (ValueError, TypeError):
-        raise ValueError('일기 날짜가 올바르지 않습니다.') from None
+        raise ValueError('일기 날짜가 올바르지 않아요.') from None
     if not isinstance(diary_text, str) or not 1 <= len(diary_text.strip()) <= 10000:
         raise ValueError('저장된 일기를 확인해 주세요.')
     scene_count = '4~6개' if len(diary_text) > 500 else '1~3개'
@@ -84,25 +84,25 @@ def generate_story(date_str, diary_text):
         with build_opener(NoRedirects()).open(request, timeout=90) as response:
             raw = response.read(MAX_RESPONSE_SIZE + 1)
         if len(raw) > MAX_RESPONSE_SIZE:
-            raise ValueError('이야기 응답이 너무 큽니다.')
+            raise ValueError('이야기 응답이 너무 커요.')
         data = json.loads(raw)
         if not isinstance(data, dict) or not isinstance(data.get('choices'), list) or not data['choices']:
-            raise ValueError('완성된 이야기를 받지 못했습니다.')
+            raise ValueError('완성된 이야기를 받지 못했어요.')
         choice = data['choices'][0]
         message = choice.get('message') if isinstance(choice, dict) else None
         content = message.get('content') if isinstance(message, dict) else None
         if not isinstance(content, str):
-            raise ValueError('이야기 응답 형식을 확인하지 못했습니다.')
+            raise ValueError('이야기 응답 형식을 확인하지 못했어요.')
         content = content.strip()
         if content.startswith('```') and content.endswith('```'):
             content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
         result = json.loads(content)
         if not isinstance(result, dict):
-            raise ValueError('이야기 응답 형식을 확인하지 못했습니다.')
+            raise ValueError('이야기 응답 형식을 확인하지 못했어요.')
         # One set of lines: shown as the caption and read aloud as-is, so screen and voice always match.
         raw_captions = result.get('lines', result.get('captions'))
         if not isinstance(raw_captions, list) or not 1 <= len(raw_captions) <= 6 or any(not isinstance(line, str) or not 1 <= len(line.strip()) <= 256 for line in raw_captions):
-            raise ValueError('이야기 응답의 문장 구성을 확인하지 못했습니다.')
+            raise ValueError('이야기 응답의 문장 구성을 확인하지 못했어요.')
         lines = [' '.join(line.split()) for line in raw_captions]
         pieces = [part for line in lines for part in textwrap.wrap(line, width=64, break_on_hyphens=False)]
         shortened = len(pieces) > 8
@@ -117,11 +117,11 @@ def generate_story(date_str, diary_text):
         return {'captions': captions, 'narration': None, 'credits_charged': credits, 'model': MODEL, 'shortened': shortened,
                 'narrator': validate_cast(result.get('narrator')), 'others': validate_cast(result.get('others'))}
     except HTTPError as error:
-        messages = {401: '학교 API 키를 확인해 주세요.', 402: '학교 크레딧이 부족합니다.',
-                    403: '이야기 모델 사용 권한을 확인해 주세요.', 404: '이야기 모델을 사용할 수 없습니다.',
-                    429: '요청이 많습니다. 잠시 후 다시 시도해 주세요.'}
-        raise ValueError(messages.get(error.code, '이야기 요청을 완료하지 못했습니다. 학교 사용량을 확인해 주세요.')) from None
+        messages = {401: '학교 API 키를 확인해 주세요.', 402: '학교 크레딧이 부족해요.',
+                    403: '이야기 모델 사용 권한을 확인해 주세요.', 404: '이야기 모델을 사용할 수 없어요.',
+                    429: '요청이 많아요. 잠시 후 다시 시도해 주세요.'}
+        raise ValueError(messages.get(error.code, '이야기 요청을 완료하지 못했어요. 학교 사용량을 확인해 주세요.')) from None
     except (URLError, TimeoutError, OSError):
-        raise ValueError('이야기 요청을 완료하지 못했습니다. 차감됐을 수 있어 자동 재요청하지 않았습니다.') from None
+        raise ValueError('이야기 요청을 완료하지 못했어요. 차감됐을 수 있어 자동 재요청하지 않았어요.') from None
     except (json.JSONDecodeError, UnicodeError, IndexError):
-        raise ValueError('이야기 응답을 읽지 못했습니다. 자동 재요청하지 않았습니다.') from None
+        raise ValueError('이야기 응답을 읽지 못했어요. 자동 재요청하지 않았어요.') from None

@@ -37,7 +37,7 @@ def get_api_key():
                         key = key[1:-1]
                     break
         except OSError:
-            raise ValueError('로컬 .env 설정 파일을 읽지 못했습니다.') from None
+            raise ValueError('로컬 .env 설정 파일을 읽지 못했어요.') from None
     if not key or len(key) > 4096 or not key.isascii() or not key.isprintable() or any(c.isspace() for c in key):
         raise ValueError('앱 폴더의 .env에 FACTCHAT_API_KEY를 설정해 주세요. 키는 화면이나 채팅에 공유하지 마세요.')
     return key
@@ -60,7 +60,7 @@ def _public_url(url):
         if not addresses or any(not ipaddress.ip_address(address[4][0]).is_global for address in addresses):
             raise ValueError()
     except (ValueError, TypeError, OSError):
-        raise ValueError('안전한 HTTPS 이미지 주소를 받지 못했습니다.') from None
+        raise ValueError('안전한 HTTPS 이미지 주소를 받지 못했어요.') from None
     return url
 
 
@@ -75,12 +75,12 @@ class ImageRedirects(HTTPRedirectHandler):
 
 class NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise ValueError('이미지 API 주소가 변경되었습니다. 자동으로 재전송하지 않았습니다.')
+        raise ValueError('이미지 API 주소가 변경되었어요. 자동으로 재전송하지 않았어요.')
 
 
 def _image_format(body, mime):
     if len(body) > MAX_IMAGE_SIZE:
-        raise ValueError('생성 이미지가 너무 큽니다.')
+        raise ValueError('생성 이미지가 너무 커요.')
     if body.startswith(b'\x89PNG\r\n\x1a\n'):
         extension, expected = 'png', 'image/png'
     elif body.startswith(b'\xff\xd8\xff'):
@@ -88,15 +88,15 @@ def _image_format(body, mime):
     elif len(body) >= 12 and body[:4] == b'RIFF' and body[8:12] == b'WEBP':
         extension, expected = 'webp', 'image/webp'
     else:
-        raise ValueError('정상적인 이미지 데이터를 받지 못했습니다.')
+        raise ValueError('정상적인 이미지 데이터를 받지 못했어요.')
     if mime.split(';', 1)[0].strip().lower() != expected:
-        raise ValueError('이미지 형식과 응답 형식이 일치하지 않습니다.')
+        raise ValueError('이미지 형식과 응답 형식이 일치하지 않아요.')
     return body, extension
 
 
 def _read_image(url):
     if not isinstance(url, str):
-        raise ValueError('생성 이미지 주소가 올바르지 않습니다.')
+        raise ValueError('생성 이미지 주소가 올바르지 않아요.')
     if url.startswith('data:'):
         try:
             header, encoded = url.split(',', 1)
@@ -104,7 +104,7 @@ def _read_image(url):
                 raise ValueError()
             body = base64.b64decode(encoded, validate=True)
         except (ValueError, TypeError):
-            raise ValueError('이미지 데이터를 해석하지 못했습니다.') from None
+            raise ValueError('이미지 데이터를 해석하지 못했어요.') from None
         return _image_format(body, header[5:-7])
     request = Request(_public_url(url), headers={'User-Agent': 'ThreeYearDiary/1.0', 'Accept': 'image/*'})
     # 이미지 다운로드에는 학교 API의 인증 헤더를 전달하지 않는다.
@@ -118,7 +118,7 @@ def generate_image(date_str, diary_text, scene=None):
         if date.fromisoformat(date_str).isoformat() != date_str:
             raise ValueError()
     except (ValueError, TypeError):
-        raise ValueError('일기 날짜가 올바르지 않습니다.') from None
+        raise ValueError('일기 날짜가 올바르지 않아요.') from None
     if not isinstance(diary_text, str) or not 1 <= len(diary_text.strip()) <= 10000:
         raise ValueError('저장된 일기를 확인해 주세요.')
     if scene is not None and (not isinstance(scene, str) or not 1 <= len(scene.strip()) <= 64):
@@ -146,13 +146,13 @@ def generate_image(date_str, diary_text, scene=None):
         with build_opener(NoRedirects()).open(request, timeout=120) as response:
             raw = response.read(MAX_RESPONSE_SIZE + 1)
         if len(raw) > MAX_RESPONSE_SIZE:
-            raise ValueError('이미지 API 응답이 너무 큽니다.')
+            raise ValueError('이미지 API 응답이 너무 커요.')
         try:
             data = json.loads(raw)
         except (ValueError, UnicodeError):
-            raise ValueError('이미지 API 응답을 읽지 못했습니다.') from None
+            raise ValueError('이미지 API 응답을 읽지 못했어요.') from None
         if not isinstance(data, dict) or not isinstance(data.get('data'), list) or not data['data'] or not isinstance(data['data'][0], dict):
-            raise ValueError('완성된 이미지를 받지 못했습니다. 자동 재요청하지 않았으니 사용량을 확인해 주세요.')
+            raise ValueError('완성된 이미지를 받지 못했어요. 자동 재요청하지 않았으니 사용량을 확인해 주세요.')
         body, extension = _read_image(data['data'][0].get('url'))
         credits = data.get('credits_charged')
         if isinstance(credits, bool) or not isinstance(credits, (int, float)) or not math.isfinite(credits) or credits < 0:
@@ -160,7 +160,7 @@ def generate_image(date_str, diary_text, scene=None):
         return body, extension, credits
     except HTTPError as error:
         messages = {401: '학교 API 키를 확인해 주세요.', 403: '학교 계정의 이미지 모델 사용 권한을 확인해 주세요.',
-                    402: '사용 가능한 학교 크레딧이 부족합니다.', 429: '요청이 많습니다. 잠시 후 다시 시도해 주세요.'}
-        raise ValueError(messages.get(error.code, '이미지 요청을 완료하지 못했습니다. 학교 API 사용량을 확인한 후 재시도해 주세요.')) from None
+                    402: '사용 가능한 학교 크레딧이 부족해요.', 429: '요청이 많아요. 잠시 후 다시 시도해 주세요.'}
+        raise ValueError(messages.get(error.code, '이미지 요청을 완료하지 못했어요. 학교 API 사용량을 확인한 후 재시도해 주세요.')) from None
     except (URLError, TimeoutError, OSError):
-        raise ValueError('이미지 요청을 완료하지 못했습니다. 이미 차감됐을 수 있어 자동 재요청하지 않았습니다. 학교 사용량을 확인해 주세요.') from None
+        raise ValueError('이미지 요청을 완료하지 못했어요. 이미 차감됐을 수 있어 자동 재요청하지 않았어요. 학교 사용량을 확인해 주세요.') from None

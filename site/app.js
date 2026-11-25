@@ -257,7 +257,7 @@ class DiaryApp {
   selectDate(day) {
     if (this.requestInProgress) return;
     if (this.hasPendingChanges()) {
-      if (!confirm('저장되지 않은 변경 사항이 있습니다. 계속 진행하시겠습니까?')) {
+      if (!confirm('저장하지 않은 내용이 있어요. 그래도 계속할까요?')) {
         this.renderCalendar();
         return;
       }
@@ -280,7 +280,7 @@ class DiaryApp {
   previousDay() {
     if (this.requestInProgress) return;
     if (this.hasPendingChanges()) {
-      if (!confirm('저장되지 않은 변경 사항이 있습니다. 계속 진행하시겠습니까?')) {
+      if (!confirm('저장하지 않은 내용이 있어요. 그래도 계속할까요?')) {
         return;
       }
     }
@@ -300,7 +300,7 @@ class DiaryApp {
   nextDay() {
     if (this.requestInProgress) return;
     if (this.hasPendingChanges()) {
-      if (!confirm('저장되지 않은 변경 사항이 있습니다. 계속 진행하시겠습니까?')) {
+      if (!confirm('저장하지 않은 내용이 있어요. 그래도 계속할까요?')) {
         return;
       }
     }
@@ -320,7 +320,7 @@ class DiaryApp {
   goToday() {
     if (this.requestInProgress) return;
     if (this.hasPendingChanges()) {
-      if (!confirm('저장되지 않은 변경 사항이 있습니다. 계속 진행하시겠습니까?')) {
+      if (!confirm('저장하지 않은 내용이 있어요. 그래도 계속할까요?')) {
         return;
       }
     }
@@ -520,9 +520,9 @@ class DiaryApp {
     }
     try {
       const response = await fetch(`/api/diary?date=${dateStr}`);
-      if (!response.ok) throw new Error('기록을 읽지 못했습니다.');
+      if (!response.ok) throw new Error('기록을 읽지 못했어요.');
       const entry = await response.json();
-      if (typeof entry.content !== 'string') throw new Error('기록 형식이 올바르지 않습니다.');
+      if (typeof entry.content !== 'string') throw new Error('기록 형식이 올바르지 않아요.');
       textarea.value = entry.content;
       textarea.style.height = entry.content.length > 200 ? '300px' : '';
       textarea.placeholder = entry.content ? '이날의 이야기를 적어보세요…' : `오늘의 질문 · ${this.dailyQuestion(this.selectedMonth, this.selectedDate)}`;
@@ -700,9 +700,9 @@ class DiaryApp {
       });
       let data;
       try { data = await response.json(); }
-      catch { throw new Error('그림 응답을 확인하지 못했습니다. 재시도 전에 학교 사용량을 확인해 주세요.'); }
-      if (!response.ok) throw new Error(data.error || '그림을 만들지 못했습니다.');
-      if (!data.entry || !data.entry.image_path) throw new Error('완성된 그림을 확인하지 못했습니다.');
+      catch { throw new Error('그림 응답을 확인하지 못했어요. 재시도 전에 학교 사용량을 확인해 주세요.'); }
+      if (!response.ok) throw new Error(data.error || '그림을 만들지 못했어요.');
+      if (!data.entry || !data.entry.image_path) throw new Error('완성된 그림을 확인하지 못했어요.');
       this.updateImageDisplay(year, data.entry);
       if (data.cached) status.textContent = '저장된 수채화를 배경에 사용했어요. 추가 생성 없음.';
       else status.textContent = typeof data.credits_charged === 'number'
@@ -710,7 +710,7 @@ class DiaryApp {
         : '배경 수채화가 완성됐어요. 정확한 차감량은 학교 사용량에서 확인해 주세요.';
     } catch (error) {
       status.className = 'image-status error';
-      status.textContent = `${error.message || '그림 연결에 실패했어요.'} 일기와 이전 그림은 유지됩니다. 다시 저장하면 다시 시도해요.`;
+      status.textContent = `${error.message || '그림 연결에 실패했어요.'} 일기와 이전 그림은 그대로예요. 다시 저장하면 다시 시도해요.`;
     }
   }
 
@@ -889,8 +889,8 @@ class DiaryApp {
     try {
       const response = await fetch('/api/shorts/story', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:entry.date,content_hash:entry.content_hash,consent:true})});
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '이야기를 구성하지 못했습니다.');
-      if (!Array.isArray(data.captions) || !data.captions.length || data.captions.length > 8 || data.captions.some(line => typeof line !== 'string' || !line.trim() || line.length > 64)) throw new Error('이야기 형식을 확인하지 못했습니다.');
+      if (!response.ok) throw new Error(data.error || '이야기를 구성하지 못했어요.');
+      if (!Array.isArray(data.captions) || !data.captions.length || data.captions.length > 8 || data.captions.some(line => typeof line !== 'string' || !line.trim() || line.length > 64)) throw new Error('이야기 형식을 확인하지 못했어요.');
       document.getElementById('shorts-captions').value = data.captions.join('\n');
       const spokenBox = document.getElementById('shorts-spoken');
       if (spokenBox) spokenBox.value = Array.isArray(data.narration) && data.narration.length === data.captions.length ? data.narration.join('\n') : '';
@@ -927,7 +927,7 @@ class DiaryApp {
       if (!data.cached && !data.processing) missing++;
     }
     if (missing && !this.imageConfigured) throw Object.assign(new Error('학교 API 키를 설정한 뒤 AI 영상을 만들 수 있어요.'), {free:true});
-    if (missing && !confirm(`장면 영상 ${missing}개(각 5초, Seedance)를 새로 만들어요. 약 ${missing * each}크레딧이 사용되고 장면 문장이 학교 API로 전송됩니다. 계속할까요?`)) {
+    if (missing && !confirm(`장면 영상 ${missing}개(각 5초, Seedance)를 새로 만들어요. 약 ${missing * each}크레딧이 사용되고 장면 문장이 학교 API로 전송돼요. 계속할까요?`)) {
       status.textContent = 'AI 영상 만들기를 취소했어요. 체크를 끄면 일기 그림으로 바로 만들 수 있어요.';
       return false;
     }

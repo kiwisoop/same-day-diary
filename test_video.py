@@ -112,7 +112,7 @@ class VideoTests(unittest.TestCase):
 
     def test_long_demo_is_read_only_and_supports_video_seeking(self):
         before = self.db.list_diaries(2024)
-        with patch.object(server, 'Database', side_effect=AssertionError('시연은 DB를 사용하지 않습니다')):
+        with patch.object(server, 'Database', side_effect=AssertionError('시연은 DB를 사용하지 않아요')):
             status, page, mime = self.request('GET', '/demo/long-diary')
             self.assertEqual((status, mime), (200, 'text/html; charset=utf-8'))
             self.assertIn('휴강 문자'.encode(), page)  # the current demo diary text

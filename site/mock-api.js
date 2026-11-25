@@ -66,7 +66,7 @@
     }
     if (path === '/api/diary') {
       const date = method === 'POST' ? body && body.date : url.searchParams.get('date');
-      if (!validDate(date)) return json(400, {error: '존재하지 않거나 형식이 올바르지 않은 날짜입니다.'});
+      if (!validDate(date)) return json(400, {error: '존재하지 않거나 형식이 올바르지 않은 날짜예요.'});
       if (method === 'GET') return json(200, entryFor(date));
       if (method === 'DELETE') { try { localStorage.removeItem(DIARY + date); } catch { /* 없음 */ } return json(200, {ok: true}); }
       const content = typeof body.content === 'string' ? body.content.trim() : '';

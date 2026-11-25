@@ -45,17 +45,17 @@ def _call(request, timeout):
     with build_opener(NoRedirects()).open(request, timeout=timeout) as response:
         raw = response.read(MAX_RESPONSE_SIZE + 1)
     if len(raw) > MAX_RESPONSE_SIZE:
-        raise ValueError('영상 API 응답이 너무 큽니다.')
+        raise ValueError('영상 API 응답이 너무 커요.')
     data = json.loads(raw)
     if not isinstance(data, dict):
-        raise ValueError('영상 API 응답 형식을 확인하지 못했습니다.')
+        raise ValueError('영상 API 응답 형식을 확인하지 못했어요.')
     return data
 
 
 def _errors(error):
-    messages = {401: '학교 API 키를 확인해 주세요.', 402: '학교 크레딧이 부족합니다.',
-                403: '학교 계정의 영상 모델 사용 권한을 확인해 주세요.', 429: '요청이 많습니다. 잠시 후 다시 시도해 주세요.'}
-    return messages.get(error.code, '영상 요청을 완료하지 못했습니다. 학교 사용량을 확인해 주세요.')
+    messages = {401: '학교 API 키를 확인해 주세요.', 402: '학교 크레딧이 부족해요.',
+                403: '학교 계정의 영상 모델 사용 권한을 확인해 주세요.', 429: '요청이 많아요. 잠시 후 다시 시도해 주세요.'}
+    return messages.get(error.code, '영상 요청을 완료하지 못했어요. 학교 사용량을 확인해 주세요.')
 
 
 def submit_clip(caption, narrator=None, others=None):
@@ -72,12 +72,12 @@ def submit_clip(caption, narrator=None, others=None):
     except HTTPError as error:
         raise ValueError(_errors(error)) from None
     except (URLError, TimeoutError, OSError):
-        raise ValueError('영상 요청을 완료하지 못했습니다. 이미 차감됐을 수 있어 자동 재요청하지 않았습니다. 학교 사용량을 확인해 주세요.') from None
+        raise ValueError('영상 요청을 완료하지 못했어요. 이미 차감됐을 수 있어 자동 재요청하지 않았어요. 학교 사용량을 확인해 주세요.') from None
     except (json.JSONDecodeError, UnicodeError):
-        raise ValueError('영상 API 응답을 읽지 못했습니다. 자동 재요청하지 않았습니다.') from None
+        raise ValueError('영상 API 응답을 읽지 못했어요. 자동 재요청하지 않았어요.') from None
     operation = data.get('operation_id')
     if not isinstance(operation, str) or not 1 <= len(operation) <= 512 or any(c.isspace() for c in operation):
-        raise ValueError('영상 작업 번호를 받지 못했습니다. 자동 재요청하지 않았으니 학교 사용량을 확인해 주세요.')
+        raise ValueError('영상 작업 번호를 받지 못했어요. 자동 재요청하지 않았으니 학교 사용량을 확인해 주세요.')
     credits = data.get('credits_charged')
     if isinstance(credits, bool) or not isinstance(credits, (int, float)) or not math.isfinite(credits) or credits < 0:
         credits = None
@@ -96,16 +96,16 @@ def poll_clip(operation):
         data = _call(request, 30)
     except HTTPError as error:
         if error.code == 404:
-            raise ValueError('영상 작업을 찾지 못했습니다.') from None
+            raise ValueError('영상 작업을 찾지 못했어요.') from None
         raise ValueError(_errors(error)) from None
     except (URLError, TimeoutError, OSError, json.JSONDecodeError, UnicodeError):
         return 'processing', None  # a missed check is harmless: the job keeps running and is checked again
     status = data.get('status')
     if status not in STATUSES:
-        raise ValueError('영상 작업 상태를 확인하지 못했습니다.')
+        raise ValueError('영상 작업 상태를 확인하지 못했어요.')
     uri = data.get('video_uri') if status == 'completed' else None
     if status == 'completed' and not isinstance(uri, str):
-        raise ValueError('완성된 영상 주소를 받지 못했습니다.')
+        raise ValueError('완성된 영상 주소를 받지 못했어요.')
     return status, uri
 
 
@@ -122,9 +122,9 @@ def download_clip(uri):
         with opener.open(request, timeout=180) as response:
             body = response.read(MAX_VIDEO_SIZE + 1)
     except (HTTPError, URLError, TimeoutError, OSError):
-        raise ValueError('완성된 영상을 내려받지 못했습니다. 다시 시도하면 이어서 받아요.') from None
+        raise ValueError('완성된 영상을 내려받지 못했어요. 다시 시도하면 이어서 받아요.') from None
     if len(body) > MAX_VIDEO_SIZE:
-        raise ValueError('완성된 영상이 너무 큽니다.')
+        raise ValueError('완성된 영상이 너무 커요.')
     if len(body) < 12 or body[4:8] != b'ftyp':
-        raise ValueError('정상적인 MP4 영상을 받지 못했습니다.')
+        raise ValueError('정상적인 MP4 영상을 받지 못했어요.')
     return body

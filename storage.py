@@ -42,10 +42,10 @@ class Database:
         try:
             d = date.fromisoformat(date_str)
             if d.isoformat() != date_str:
-                raise ValueError('존재하지 않거나 형식이 올바르지 않은 날짜입니다.')
+                raise ValueError('존재하지 않거나 형식이 올바르지 않은 날짜예요.')
             return d
         except (ValueError, TypeError):
-            raise ValueError('존재하지 않거나 형식이 올바르지 않은 날짜입니다.') from None
+            raise ValueError('존재하지 않거나 형식이 올바르지 않은 날짜예요.') from None
     
     def _validate_content(self, content):
         if not isinstance(content, str):
