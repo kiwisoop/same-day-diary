@@ -981,7 +981,7 @@ class DiaryApp {
         const section = document.createElement('section');
         const title = document.createElement('p');
         title.textContent = `${saved.day.slice(0,4)}년 · ${saved.kind === 'three-year' ? '3년 이야기' : '하루 이야기'} · ${saved.seconds}초 · ${saved.created_at.slice(0,16).replace('T',' ')}${saved.stale ? ' · 수정·삭제 전 일기로 만든 영상' : ''}`;
-        const video = document.createElement('video'); video.src = saved.url; video.controls = true; video.playsInline = true; video.preload = 'metadata';
+        const video = document.createElement('video'); video.controls = true; video.playsInline = true; this.showVideo(video, saved.url, saved.poster);
         const link = document.createElement('a'); link.href = saved.url; link.download = '일기_쇼츠.mp4'; link.textContent = 'MP4 저장';
         const credit = document.createElement('p'); credit.className = 'demo-label';
         credit.textContent = (Array.isArray(saved.music) && saved.music.length ? '음악: ' + saved.music.join(' / ') : '음악: AcousticGuitarSample — RyGuy, Public Domain')
@@ -1016,6 +1016,24 @@ class DiaryApp {
     finally {this.requestInProgress = false; document.getElementById('close-videos').disabled = false; dialog.removeEventListener('cancel',preventClose);}
   }
 
+  // A shorts video opens on a dark fade, so its still cover is a scene: the poster the server gives,
+  // or else a frame a few seconds in, rewound to the start when play begins.
+  showVideo(video, url, poster) {
+    if (video.coverCleanup) video.coverCleanup();
+    video.removeAttribute('poster');
+    const safePoster = typeof poster === 'string' && /^(\/|\.\.\/)[\w./-]+\.(png|jpe?g)$/.test(poster) ? poster : '';
+    if (safePoster) video.poster = safePoster;
+    video.preload = safePoster ? 'metadata' : 'auto';
+    video.src = url;
+    if (safePoster || typeof video.addEventListener !== 'function') return;
+    let cover = null;
+    const onMeta = () => { if (video.currentTime === 0 && video.paused) { cover = Math.min(3, (video.duration || 0) / 3); video.currentTime = cover; } };
+    const onPlay = () => { if (cover !== null && Math.abs(video.currentTime - cover) < 0.05) video.currentTime = 0; video.coverCleanup(); };
+    video.addEventListener('loadedmetadata', onMeta);
+    video.addEventListener('play', onPlay);
+    video.coverCleanup = () => { video.removeEventListener('loadedmetadata', onMeta); video.removeEventListener('play', onPlay); video.coverCleanup = null; };
+  }
+
   async makeShorts() {
     if (this.requestInProgress || !this.shortsEntry) return;
     const captions = this.shortsCaptions();
@@ -1047,7 +1065,7 @@ class DiaryApp {
       const response = await fetch('/api/shorts', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:[{date:entry.date,content_hash:entry.content_hash,caption:captions[0]}],captions,clips,music:this.selectedMusic('shorts-music'),narration:this.wantsNarration('shorts-narration'),...(spoken.length ? {spoken} : {})})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '쇼츠 생성 실패');
-      const video = document.getElementById('shorts-video'); video.src = data.url; video.hidden = false;
+      const video = document.getElementById('shorts-video'); this.showVideo(video, data.url, data.poster); video.hidden = false;
       const link = document.getElementById('download-shorts'); link.href = data.url; link.hidden = false;
       const used = clips ? (this.clipCredits == null ? ' AI 영상 차감량은 학교 사용량에서 확인해 주세요.' : ` AI 영상 ${this.clipCredits}크레딧`) : '';
       status.textContent = `${data.seconds}초 쇼츠가 완성됐어요. 재생하거나 MP4로 저장할 수 있어요.${used}`;
