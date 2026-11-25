@@ -16,7 +16,7 @@ SITE = ROOT / 'site'
 
 BANNER = ('<div class="static-banner" role="note"><strong>온라인 시연판</strong> · 일기는 이 브라우저에만 저장돼요 · '
           'AI 이야기·그림·영상은 미리 만든 결과를 보여 줘요(토큰 사용 없음) · 전체 기능은 로컬 실행 · '
-          '<a href="https://github.com/kiwisoop/ai-practice-course/tree/main/Term-Project">프로젝트 설명</a></div>')
+          '<a href="https://github.com/kiwisoop/term-project">프로젝트 설명</a></div>')
 BANNER_CSS = ('\n.static-banner { padding: 8px 16px; font-size: 13px; text-align: center; color: #fffdf6; background: var(--green); }\n'
               '.static-banner a { color: inherit; }\n')
 

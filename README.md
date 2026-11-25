@@ -2,7 +2,7 @@
 
 > 같은 날짜의 일기를 3년 동안 한 화면에 쌓고, AI가 그 일기를 **짧은 이야기·수채화·세로 쇼츠 영상**으로 만들어 주는 웹 앱입니다.
 
-**[▶ 온라인 시연판 열기](https://kiwisoop.github.io/ai-practice-course/Term-Project/)** · **[쇼츠 예시 페이지](https://kiwisoop.github.io/ai-practice-course/Term-Project/site/shorts.html)** · 인공지능활용실습 기말 프로젝트
+**[▶ 온라인 시연판 열기](https://kiwisoop.github.io/term-project/)** · **[쇼츠 예시 페이지](https://kiwisoop.github.io/term-project/site/shorts.html)** · 인공지능활용실습 기말 프로젝트
 
 ![3년 다이어리 메인 화면: 같은 11월 17일의 2024·2025년 일기와 수채화가 위아래로 놓여 있다](docs/images/01-main.jpg)
 
@@ -82,8 +82,8 @@ python3 tools/build_site.py   # static/ → site/ (경로 변환 + mock-api.js �
 준비물은 Python 3.10 이상과 FFmpeg입니다. 외부 Python 패키지는 필요 없습니다.
 
 ```sh
-git clone https://github.com/kiwisoop/ai-practice-course.git
-cd ai-practice-course/Term-Project
+git clone https://github.com/kiwisoop/term-project.git
+cd term-project
 cp .env.example .env       # 학교 API 키를 편집기에서 직접 입력 (선택)
 python3 server.py
 ```
