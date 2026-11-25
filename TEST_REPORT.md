@@ -65,7 +65,7 @@ ECC `feature-dev` 흐름(요구사항 → 코드 탐색 → 질문 → 설계 �
 
 | 검사 | 결과 |
 |---|---|
-| `python3 -m unittest -q` | 50개 통과 (신규 `test_v2.py` 4개 포함, 3년 영상 테스트는 카드 구성에 맞게 수정) |
+| `python3 -m unittest -q` | 50개 통과 (신규 `test_cards_music.py` 4개 포함, 3년 영상 테스트는 카드 구성에 맞게 수정) |
 | `node --check static/app.js` | 통과 |
 | `node test_frontend.cjs` | 5묶음 통과 (신규: 오늘의 질문·지난 기록 안내) |
 

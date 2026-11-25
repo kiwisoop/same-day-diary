@@ -1,4 +1,4 @@
-"""v2 additions: FFmpeg discovery, title/year cards, and real card rendering. No paid API calls."""
+"""FFmpeg discovery, title/year cards, demo data and background music, with real card rendering. No paid API calls."""
 import json
 import os
 import stat
