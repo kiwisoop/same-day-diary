@@ -154,3 +154,27 @@ class VideoTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PosterTests(unittest.TestCase):
+    setUp = test_app.DiaryTests.setUp
+    request = test_app.DiaryTests.request
+
+    def test_saved_video_gets_a_scene_still_as_its_cover(self):
+        folder = Path(self.db.db_path).parent / 'videos'
+        folder.mkdir(exist_ok=True)
+        name = 'a' * 32
+        for seconds, vid in ((4, name), (1, 'b' * 32)):
+            subprocess.run([video.FFMPEG, '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c=orange:s=72x128:d={seconds}',
+                            '-pix_fmt', 'yuv420p', str(folder / f'{vid}.mp4')], check=True)
+            self.db.save_video(vid, {'url': f'/videos/{vid}.mp4', 'seconds': seconds, 'sources': {'2024-11-17': 'h'},
+                                     'kind': 'day', 'created_at': '2026-11-25T00:00:00+09:00'})
+        status, data = self.request('GET', '/api/videos?date=2024-11-17')
+        self.assertEqual(status, 200)
+        self.assertEqual(sorted(v['poster'] for v in data['videos']), [f'/videos/{"a" * 32}.jpg', f'/videos/{"b" * 32}.jpg'],
+                         'a clip shorter than 3 s still gets its first frame')
+        status, body, kind, *_ = self.request('GET', f'/videos/{name}.jpg')
+        self.assertEqual((status, kind), (200, 'image/jpeg'))
+        self.assertTrue(body.startswith(b'\xff\xd8'))
+        self.assertEqual(self.request('GET', '/videos/' + 'c' * 32 + '.jpg')[0], 404)
+        self.assertIsNone(server.video_poster(self.db, '/videos/../.env'))

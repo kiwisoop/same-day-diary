@@ -811,7 +811,8 @@ class DiaryApp {
       return;
     }
     this.shortsEntry = entry;
-    document.getElementById('shorts-date').textContent = entry.date + (entry.is_demo ? ' · 시연용 가상 기록' : '');
+    const [y, m, d] = entry.date.split('-').map(Number);
+    document.getElementById('shorts-date').textContent = `${y}년 ${m}월 ${d}일` + (entry.is_demo ? ' · 시연용 가상 기록' : '');
     document.getElementById('shorts-captions').value = '';
     const spokenBox = document.getElementById('shorts-spoken');
     if (spokenBox) spokenBox.value = '';
@@ -895,8 +896,8 @@ class DiaryApp {
       if (spokenBox) spokenBox.value = Array.isArray(data.narration) && data.narration.length === data.captions.length ? data.narration.join('\n') : '';
       this.renderShortsStory();
       button.disabled = false;
-      const usage = data.cached ? '저장된 이야기 재사용 · 추가 AI 호출 없음' : (data.credits_charged == null ? '차감량은 학교 사용량에서 확인해 주세요.' : `이야기 구성 ${data.credits_charged}크레딧`);
-      const notes = [data.shortened ? 'AI 문장이 길어 장면마다 줄였어요. 필요하면 수정해 주세요.' : '', data.edited ? '이전에 수정한 이야기를 불러왔어요.' : '', data.demo ? '시연용으로 미리 작성해 둔 이야기예요(AI 호출 없음).' : ''].filter(Boolean).join(' ');
+      const usage = data.demo ? '시연용으로 미리 써 둔 이야기라 AI를 부르지 않았어요.' : data.cached ? '저장해 둔 이야기를 다시 써서 AI를 부르지 않았어요.' : (data.credits_charged == null ? '차감량은 학교 사용량에서 확인해 주세요.' : `이야기 구성 ${data.credits_charged}크레딧`);
+      const notes = [data.shortened ? 'AI 문장이 길어 장면마다 줄였어요. 필요하면 수정해 주세요.' : '', data.edited ? '이전에 수정한 이야기를 불러왔어요.' : ''].filter(Boolean).join(' ');
       status.textContent = `${data.captions.length}개 장면으로 구성했어요. ${usage}${notes ? ' ' + notes : ''}`;
     } catch (error) {
       status.textContent = error.message + ' 원본 일기는 그대로예요. 재시도 전 학교 사용량을 확인해 주세요.';
@@ -980,9 +981,9 @@ class DiaryApp {
       for (const saved of data.videos) {
         const section = document.createElement('section');
         const title = document.createElement('p');
-        title.textContent = `${saved.day.slice(0,4)}년 · ${saved.kind === 'three-year' ? '3년 이야기' : '하루 이야기'} · ${saved.seconds}초 · ${saved.created_at.slice(0,16).replace('T',' ')}${saved.stale ? ' · 수정·삭제 전 일기로 만든 영상' : ''}`;
+        title.textContent = `${saved.day.slice(0,4)}년 · ${saved.kind === 'three-year' ? '3년 이야기' : '하루 이야기'} · ${saved.seconds}초 · ${saved.created_at.slice(0,10).replaceAll('-','.')} ${saved.created_at.slice(11,16)} 만듦${saved.stale ? ' · 수정·삭제 전 일기로 만든 영상' : ''}`;
         const video = document.createElement('video'); video.controls = true; video.playsInline = true; this.showVideo(video, saved.url, saved.poster);
-        const link = document.createElement('a'); link.href = saved.url; link.download = '일기_쇼츠.mp4'; link.textContent = 'MP4 저장';
+        const link = document.createElement('a'); link.href = saved.url; link.download = `${saved.day}_${saved.kind === 'three-year' ? '3년' : '하루'}쇼츠.mp4`; link.textContent = 'MP4 저장';
         const credit = document.createElement('p'); credit.className = 'demo-label';
         credit.textContent = (Array.isArray(saved.music) && saved.music.length ? '음악: ' + saved.music.join(' / ') : '음악: AcousticGuitarSample — RyGuy, Public Domain')
           + (typeof saved.voice === 'string' && saved.voice ? ' · ' + saved.voice : '');
@@ -1066,7 +1067,7 @@ class DiaryApp {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '쇼츠 생성 실패');
       const video = document.getElementById('shorts-video'); this.showVideo(video, data.url, data.poster); video.hidden = false;
-      const link = document.getElementById('download-shorts'); link.href = data.url; link.hidden = false;
+      const link = document.getElementById('download-shorts'); link.href = data.url; link.download = `${entry.date}_하루쇼츠.mp4`; link.hidden = false;
       const used = clips ? (this.clipCredits == null ? ' AI 영상 차감량은 학교 사용량에서 확인해 주세요.' : ` AI 영상 ${this.clipCredits}크레딧`) : '';
       status.textContent = `${data.seconds}초 쇼츠가 완성됐어요. 재생하거나 MP4로 저장할 수 있어요.${used}`;
     } catch (error) {status.textContent = error.message + (error.free ? '' : ' 원본 일기는 그대로예요. 완성된 영상 장면은 보관돼요.');}

@@ -23,7 +23,7 @@
           <source src="../previews/example-day.mp4" type="video/mp4">
         </video>
         <figcaption>
-          <h2>하루 쇼츠 <span class="demo-duration" data-for="0"></span></h2>
+          <h2>하루 쇼츠 <span class="demo-duration">· 23.5초</span></h2>
           <p>휴강 날 친구와 걸은 은행나무길. 장면 4개가 모두 다른 영상이에요.</p>
           <a href="../previews/example-day.mp4" download="하루쇼츠_예시.mp4" class="btn-save long-demo-download">MP4 저장</a>
         </figcaption>
@@ -33,7 +33,7 @@
           <source src="../previews/example-three-year.mp4" type="video/mp4">
         </video>
         <figcaption>
-          <h2>3년 쇼츠 <span class="demo-duration" data-for="1"></span></h2>
+          <h2>3년 쇼츠 <span class="demo-duration">· 50.5초</span></h2>
           <p>은행나무길, 비 온 날의 유자차, 발표 준비. 같은 날, 세 해의 시작과 끝을 이었어요.</p>
           <a href="../previews/example-three-year.mp4" download="3년쇼츠_예시.mp4" class="btn-save long-demo-download">MP4 저장</a>
         </figcaption>
@@ -74,11 +74,5 @@
       <p>배경음악 — 하루 쇼츠: Redwood Trail — Jason Shaw (audionautix.com), CC BY 3.0 / 3년 쇼츠: Redwood Trail — Jason Shaw (audionautix.com), CC BY 3.0 / Ukulele Rising — Squire Tuck, CC BY 4.0<br>내레이션 — AI 음성: Supertonic 3 (Supertone, OpenRAIL-M), 이 컴퓨터에서 생성(크레딧 없음)</p>
     </footer>
   </main>
-  <script>
-    document.querySelectorAll('.demo-movie video').forEach((video, i) => video.addEventListener('loadedmetadata', () => {
-      const label = document.querySelector(`.demo-duration[data-for="${i}"]`);
-      if (label && Number.isFinite(video.duration)) label.textContent = '· ' + video.duration.toFixed(1) + '초';
-    }));
-  </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 import hashlib
+import subprocess
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +16,7 @@ import image_api
 import story_api
 import narration
 import video_api
+import video_export
 from video_export import export_video, item_duration, make_card, make_ending, MUSIC, DEFAULT_MUSIC, ending_music
 
 ROOT = Path(__file__).resolve().parent
@@ -355,6 +357,34 @@ def spoken_texts(scenes):
     return texts
 
 
+def video_poster(db, url):
+    """'/videos/<id>.jpg', a still of the scene a few seconds in (shorts open on a dark fade). Made once, beside the MP4."""
+    if not isinstance(url, str) or not re.fullmatch(r'/videos/[0-9a-f]{32}\.mp4', url):
+        return None
+    video = Path(db.db_path).parent / 'videos' / url.rsplit('/', 1)[1]
+    poster = video.with_suffix('.jpg')
+    if not poster.is_file() and video.is_file() and not video.is_symlink():
+        for start in ('3', '0'):  # a clip shorter than 3 s gives no frame there
+            try:
+                subprocess.run([video_export.FFMPEG, '-v', 'error', '-y', '-ss', start, '-i', str(video), '-frames:v', '1',
+                                '-q:v', '4', str(poster)], check=True, timeout=30, capture_output=True)
+            except (OSError, subprocess.SubprocessError):
+                poster.unlink(missing_ok=True)
+            if poster.is_file() and poster.stat().st_size:
+                break
+            poster.unlink(missing_ok=True)
+    return url[:-4] + '.jpg' if poster.is_file() else None
+
+
+def with_posters(db, videos):
+    for video in videos:
+        if not video.get('poster'):
+            poster = video_poster(db, video.get('url'))
+            if poster:
+                video['poster'] = poster
+    return videos
+
+
 def render_and_save_video(db, items, sources, kind, shorts, music=DEFAULT_MUSIC, switch_music=None, narrate=False):
     if not VIDEO_LOCK.acquire(blocking=False):
         return 409, {'error': '다른 영상을 만들고 있어요. 잠시 기다려 주세요.'}
@@ -381,6 +411,9 @@ def render_and_save_video(db, items, sources, kind, shorts, music=DEFAULT_MUSIC,
                     'music': [MUSIC[name][2] for name in dict.fromkeys(m for m in (music, switch_music) if m)]}
         if narrate and shorts:
             metadata['voice'] = narration.CREDIT
+        poster = video_poster(db, metadata['url'])
+        if poster:
+            metadata['poster'] = poster
         db.save_video(filename[:-4], metadata)
         return 200, metadata
     finally:
@@ -514,6 +547,13 @@ class DiaryHandler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = parsed.path
         try:
+            if self.command == 'GET' and re.fullmatch(r'/videos/[0-9a-f]{32}\.jpg', path):
+                poster = Path(Database().db_path).parent / 'videos' / path.rsplit('/', 1)[1]
+                if not poster.is_file() or poster.is_symlink():
+                    self.reply(404, {'error': '표지를 찾을 수 없습니다.'})
+                else:
+                    self.reply(200, poster.read_bytes(), 'image/jpeg', {'Cache-Control': 'no-cache'})
+                return
             if self.command == 'GET' and (path in DEMO_VIDEOS or re.fullmatch(r'/videos/[0-9a-f]{32}\.mp4', path)):
                 if path in DEMO_VIDEOS:
                     video = ROOT / DEMO_VIDEOS[path]
@@ -589,7 +629,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                 dates = parse_qs(parsed.query).get('date', [])
                 if len(dates) != 1:
                     raise ValueError('영상의 날짜를 선택해 주세요.')
-                result = {'videos': db.list_videos(dates[0])}
+                result = {'videos': with_posters(db, db.list_videos(dates[0]))}
             elif path == '/api/shorts/scene':
                 status, result = create_scene(db, data)
                 self.reply(status, result)
