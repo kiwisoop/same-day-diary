@@ -73,7 +73,7 @@ class DiaryTests(unittest.TestCase):
         self.db.attach_image(entry['date'], entry['content_hash'], '/assets/demo-walk.png')
         self.db.load_demo_data()
         upgraded = self.db.get_diary(entry['date'])
-        self.assertGreater(len(upgraded['content']), 1000)
+        self.assertGreater(len(upgraded['content']), 300)
         self.assertTrue(upgraded['is_demo'])
         self.assertTrue(upgraded['image_stale'], '이전 시연 그림을 새 일기의 생성 결과로 표시하지 않음')
         self.assertEqual(upgraded['image_path'], '/assets/demo-walk.png')

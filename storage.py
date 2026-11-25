@@ -143,6 +143,7 @@ class Database:
         cursor.execute('DELETE FROM diary WHERE date = ?', (date_str,))
         cursor.execute('DELETE FROM settings WHERE key = ?', ('shorts_story:' + date_str,))
         cursor.execute('DELETE FROM settings WHERE key LIKE ?', ('shorts_scene:' + date_str + ':%',))
+        cursor.execute('DELETE FROM settings WHERE key LIKE ?', ('shorts_clip:' + date_str + ':%',))
         conn.commit()
         conn.close()
 
@@ -233,13 +234,17 @@ class Database:
             for previous_content in previous.get(date_str, []):
                 cursor.execute('UPDATE diary SET content = ?, content_hash = ?, updated_at = ? WHERE date = ? AND is_demo = 1 AND content_hash = ?',
                                (content, content_hash, now, date_str, hashlib.sha256(previous_content.encode()).hexdigest()))
-            self._seed_demo_story(cursor, date_str, content_hash, entry.get('captions'))
+            self._seed_demo_story(cursor, date_str, content_hash, entry.get('captions'), entry.get('narration'),
+                                  entry.get('narrator'), entry.get('others'))
         conn.commit()
         conn.close()
 
     @staticmethod
-    def _seed_demo_story(cursor, date_str, content_hash, captions):
-        """Store hand-written demo captions so demo shorts need no AI call. Marked demo, never overwrites a story for this text."""
+    def _seed_demo_story(cursor, date_str, content_hash, captions, narration=None, narrator=None, others=None):
+        """Store hand-written demo captions (and spoken lines) so demo shorts need no AI call.
+
+        Marked demo. Never overwrites a story for this text, except an untouched demo story whose lines changed.
+        """
         if not isinstance(captions, list) or not captions:
             return
         row = cursor.execute('SELECT is_demo, content_hash FROM diary WHERE date = ?', (date_str,)).fetchone()
@@ -248,13 +253,21 @@ class Database:
         key = 'shorts_story:' + date_str
         existing = cursor.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
         try:
-            if existing and json.loads(existing[0]).get('content_hash') == content_hash:
-                return
+            if existing:
+                old = json.loads(existing[0])
+                # An untouched demo story is replaced when the hand-written lines change.
+                upgrade = old.get('demo') is True and (old.get('version') != 2 or old.get('captions') != captions or old.get('narration') != narration
+                                                       or old.get('narrator') != narrator or old.get('others') != others)
+                if old.get('content_hash') == content_hash and not upgrade:
+                    return
         except (ValueError, AttributeError):
             pass
+        valid = isinstance(narration, list) and len(narration) == len(captions) and all(isinstance(line, str) and line.strip() for line in narration)
         # version must match server.STORY_VERSION for the cache to be reused.
         cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-                       (key, json.dumps({'version': 1, 'content_hash': content_hash, 'captions': captions, 'demo': True}, ensure_ascii=False)))
+                       (key, json.dumps({'version': 2, 'content_hash': content_hash, 'captions': captions,
+                                         'narration': narration if valid else None, 'narrator': narrator, 'others': others,
+                                         'demo': True}, ensure_ascii=False)))
 
     def list_diaries(self, start_year):
         self._validate_start_year(start_year)

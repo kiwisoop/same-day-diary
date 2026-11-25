@@ -35,6 +35,7 @@ PAGES = {
         ('/demo/three-year.mp4', '../previews/example-three-year.mp4'),
         ('/demo/shorts-poster.png', '../previews/example-day-poster.png'),
         ('/demo/three-year-poster.png', '../previews/example-three-year-poster.png'),
+        ('src="/assets/', 'src="../assets/'),
     ],
 }
 OUTPUT = {'index.html': 'index.html', 'long-diary-demo.html': 'shorts.html'}

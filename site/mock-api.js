@@ -19,11 +19,11 @@
     ],
   };
   // 미리 렌더링한 예시 영상 (previews/)
-  const DAY_VIDEO = {date: '2024-11-17', url: MEDIA + 'previews/example-day.mp4', seconds: 27,
+  const DAY_VIDEO = {date: '2024-11-17', url: MEDIA + 'previews/example-day.mp4', seconds: 23.5,
     music: ['Redwood Trail — Jason Shaw (audionautix.com), CC BY 3.0']};
   const THREE_DATES = ['2024-11-17', '2025-11-17', '2026-11-17'];
-  const THREE_VIDEO = {url: MEDIA + 'previews/example-three-year.mp4', seconds: 36.5,
-    music: ['Warm Sunset — MusicLFiles, CC BY 4.0', 'Ukulele Rising — Squire Tuck, CC BY 4.0']};
+  const THREE_VIDEO = {url: MEDIA + 'previews/example-three-year.mp4', seconds: 50.5,
+    music: ['Redwood Trail — Jason Shaw (audionautix.com), CC BY 3.0', 'Ukulele Rising — Squire Tuck, CC BY 4.0']};
   // 예시 영상의 내레이션은 로컬에서 미리 만든 것. 시연판은 음성을 새로 만들지 않는다.
   const VOICE = 'AI 음성: Supertonic 3 (Supertone, OpenRAIL-M) · F1';
 
@@ -85,7 +85,7 @@
         if (existing && !existing.is_demo) continue; // 직접 쓴 기록은 보존
         const hash = await sha256(d.content);
         write(DIARY + d.date, {date: d.date, content: d.content, content_hash: hash, image_path: MEDIA + d.image_path.replace(/^\//, ''),
-          image_content_hash: hash, is_demo: true, captions: d.captions || null, updated_at: now()});
+          image_content_hash: hash, is_demo: true, captions: d.captions || null, narration: d.narration || null, updated_at: now()});
       }
       write('static-start-year', 2024);
       return json(200, {start_year: 2024, month: 11, day: 17});
@@ -93,12 +93,19 @@
     if (path === '/api/shorts/story') {
       const entry = entryFor(body.date);
       if (entry.is_demo && entry.content_hash === body.content_hash && Array.isArray(entry.captions))
-        return json(200, {captions: entry.captions, cached: true, demo: true});
+        return json(200, {captions: entry.captions, narration: entry.narration || null, cached: true, demo: true});
       return json(409, {error: OFFLINE});
     }
     if (path === '/api/shorts/scene') {
       if (body.check_only) return json(200, {cached: false});
       return json(409, {error: OFFLINE});
+    }
+    if (path === '/api/shorts/clip') {
+      // 시연 기록의 장면 영상(Seedance)은 예시 쇼츠에 이미 들어 있다. 새 영상은 만들지 않는다.
+      const entry = entryFor(body.date);
+      const ready = entry.is_demo && entry.content_hash === body.content_hash;
+      if (body.check_only) return json(200, {cached: ready, processing: false});
+      return ready ? json(200, {status: 'completed', cached: true, credits_charged: 0}) : json(409, {error: OFFLINE});
     }
     if (path === '/api/shorts') {
       const item = body.items && body.items[0];

@@ -26,7 +26,7 @@ class StoryTests(unittest.TestCase):
             result = story_api.generate_story('2024-11-17',text)
         payload = json.loads(opener.open.call_args.args[0].data)
         self.assertEqual(json.loads(payload['messages'][1]['content'])['diary'],text)
-        self.assertEqual(payload['max_tokens'],800)
+        self.assertEqual(payload['max_tokens'],1400)
         self.assertEqual(result['credits_charged'],0.7)
         self.assertEqual(len(result['captions']),4)
         self.assertNotIn('test-only-key',json.dumps(payload))

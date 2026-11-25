@@ -85,14 +85,16 @@ class EnhancementTests(unittest.TestCase):
             story.assert_not_called()
             self.assertEqual(self.request('POST','/api/three-year-video',{'items':entries[::-1],'consent':True})[0],400)
 
-    def test_six_captions_keep_middle_picture_until_final_scene(self):
+    def test_each_scene_uses_only_its_own_picture(self):
         entry = self.entry_with_image(); captions=['아침 준비','밖으로 나감','은행잎 길','친구와 대화','돌아오는 길','집에서 마무리']
         urls = {}
         with patch.object(server.image_api,'generate_image',return_value=(b'image','png',15)):
             for i in (0,2,5):
                 urls[i]=self.request('POST','/api/shorts/scene',{**entry,'caption':captions[i],'consent':True})[1]['url'].split('/')[-1]
         def encode(items,path,**kwargs):
-            self.assertEqual([i['image_path'].name for i in items],[urls[i] for i in (0,0,2,2,2,5)])
+            names=[i['image_path'].name for i in items]
+            self.assertEqual([names[i] for i in (0,2,5)],[urls[i] for i in (0,2,5)])
+            self.assertTrue(all(names[i] not in urls.values() for i in (1,3,4)),'다른 장면 그림을 반복하지 않고 일기 그림 사용')
             path.write_bytes(b'video')
         with patch.object(server,'export_video',side_effect=encode):
             self.assertEqual(self.request('POST','/api/shorts',{'items':[entry],'captions':captions,'scene_images':True})[0],200)

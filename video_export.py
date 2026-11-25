@@ -248,6 +248,10 @@ def _validate_items(items):
             raise ValueError(f'항목 {i}의 이미지 파일이 없습니다')
         if not image_path.is_file():
             raise ValueError(f'항목 {i}의 image_path는 파일이어야 합니다')
+        if item.get('clip') is not None:
+            clip = Path(item['clip'])
+            if clip.suffix.lower() != '.mp4' or not clip.is_file():
+                raise ValueError(f'항목 {i}의 장면 영상 파일이 없습니다')
         if item.get('narration') is not None:
             voice = Path(item['narration'])
             if voice.suffix.lower() != '.wav' or not voice.is_file():
@@ -330,8 +334,8 @@ def _create_scene_video(
         f'pad=720:1280:(ow-iw)/2:180:color=#{cream_color}'
     )
     
-    # 2. zoompan (느린 확대)
-    filter_parts.append('zoompan=z=\'min(zoom+0.0015,1.5)\':d=1:x=(iw-iw/zoom)/2:y=(ih-ih/zoom)/2:s=720x1280:fps=24')
+    # 2. 고정 화면 (zoompan은 화면이 흔들려 쓰지 않음)
+    filter_parts.append('setsar=1,fps=24')
     
     # 3. 페이드 (4초 = 96 프레임 at 24fps)
     filter_parts.append('fade=t=in:st=0:d=0.5,fade=t=out:st=3.5:d=0.5')
@@ -434,36 +438,40 @@ REVEAL_SECONDS = 0.4
 CAPTION_BOTTOM = 1010  # Keeps captions above the Shorts/Reels buttons at the bottom of the screen.
 
 
-def _create_shorts_scene(image_path, date_str, caption, output_video, font_path, temp_dir, scene_index=0, seconds=None):
+def _create_shorts_scene(image_path, date_str, caption, output_video, font_path, temp_dir, scene_index=0, seconds=None, clip=None):
     date_text = datetime.strptime(date_str, '%Y-%m-%d').strftime('%Y.%m.%d')
     seconds = scene_duration(caption) if seconds is None else seconds
-    frames = round(seconds * 24) - 1
-    pan = f'on/{frames}' if scene_index % 2 == 0 else f'1-on/{frames}'
+    if clip:
+        # AI video clip of the scene picture; when the scene is longer, its last frame holds until the end.
+        source = ['-i', str(clip)]
+        hold = f',tpad=stop_mode=clone:stop_duration={seconds}'
+    else:
+        source = ['-loop', '1', '-framerate', '24', '-i', str(image_path)]
+        hold = ''
     lines = caption_lines(caption)
     fontsize = 36 if len(lines) >= 4 else 42
     line_height = round(fontsize * 1.45)
     box_top = CAPTION_BOTTOM - len(lines) * line_height - 48
     filters = [
-        'scale=800:1400:force_original_aspect_ratio=increase,crop=800:1400',
-        f"zoompan=z='1.04+0.06*on/{frames}':d=1:x=(iw-iw/zoom)*({pan}):y=(ih-ih/zoom)/2:s=720x1280:fps=24",
+        'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=24' + hold,
         'drawbox=x=0:y=0:w=iw:h=ih:color=black@0.20:t=fill',
         f'drawbox=x=30:y={box_top}:w=660:h={CAPTION_BOTTOM - box_top}:color=black@0.38:t=fill',
         f"drawtext=fontfile='{font_path}':text='{date_text}':fontsize=23:fontcolor=white:x=48:y=90:shadowcolor=black@0.6:shadowx=1:shadowy=2",
     ]
-    # Phrase-by-phrase reveal: each line fades in and rises slightly, like the diary being read aloud.
+    # Phrase-by-phrase reveal: each line fades in in place, like the diary being read aloud.
     for index, (line, start) in enumerate(zip(lines, reveal_times(len(lines), seconds))):
         text_file = Path(temp_dir) / f'caption_{scene_index:02d}_{index:02d}.txt'
         text_file.write_text(line, encoding='utf-8')
         y = box_top + 24 + index * line_height
         filters.append(
             f"drawtext=fontfile='{font_path}':textfile='{text_file}':expansion=none:fontsize={fontsize}:fontcolor=white"
-            f":x=(w-text_w)/2:y='{y}+16*max(0,1-(t-{start})/{REVEAL_SECONDS})'"
+            f":x=(w-text_w)/2:y={y}"
             f":alpha='if(lt(t,{start}),0,min(1,(t-{start})/{REVEAL_SECONDS}))'"
             ':shadowcolor=black@0.7:shadowx=2:shadowy=3')
     filters.append(f'fade=t=in:st=0:d=0.15,fade=t=out:st={seconds-0.15}:d=0.15')
     result = subprocess.run([FFMPEG, '-v', 'error', '-y', '-filter_threads', '1',
-                             '-loop', '1', '-framerate', '24', '-i', str(image_path),
-                             '-vf', ','.join(filters), '-t', str(seconds), '-r', '24', '-c:v', 'libx264',
+                             *source,
+                             '-vf', ','.join(filters), '-t', str(seconds), '-r', '24', '-an', '-c:v', 'libx264',
                              '-preset', 'fast', '-pix_fmt', 'yuv420p', str(output_video)],
                             capture_output=True, timeout=180)
     if result.returncode:
@@ -583,8 +591,7 @@ def export_video(items, output_path, shorts=False, music=DEFAULT_MUSIC, switch_m
                     str(scene_output),
                     font_path,
                     temp_dir,
-                    # Pan direction alternates over pictures only, so cards do not break the rhythm.
-                    **({'scene_index': scene_index, 'seconds': item_duration(item, True)} if shorts else {})
+                    **({'scene_index': scene_index, 'seconds': item_duration(item, True), 'clip': item.get('clip')} if shorts else {})
                 )
                 scene_index += 1
                 scene_videos.append(str(scene_output))

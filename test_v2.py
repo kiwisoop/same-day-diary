@@ -101,18 +101,23 @@ class DemoDataTests(unittest.TestCase):
     def test_previous_demo_upgraded_only_when_untouched(self):
         previous = json.loads((Path(__file__).parent / 'demo_diaries_previous.json').read_text(encoding='utf-8'))
         current = json.loads((Path(__file__).parent / 'demo_diaries.json').read_text(encoding='utf-8'))
-        conn = sqlite3.connect(self.db.db_path)
-        for item in previous:
-            digest = hashlib.sha256(item['content'].encode()).hexdigest()
-            conn.execute('INSERT INTO diary (date, content, content_hash, image_path, is_demo, updated_at) VALUES (?, ?, ?, ?, 1, ?)',
-                         (item['date'], item['content'], digest, item['image_path'], 'x'))
-        conn.commit(); conn.close()
-        self.db.save_diary('2025-11-17', '내가 고쳐 쓴 기록')  # edited by the user: is_demo becomes 0
-        self.db.load_demo_data()
-        self.assertEqual(self.db.get_diary('2024-11-17')['content'], current[0]['content'])
-        self.assertEqual(self.db.get_diary('2025-11-17')['content'], '내가 고쳐 쓴 기록')
-        self.assertEqual(self.db.get_diary('2026-11-17')['content'], current[2]['content'])
-        self.assertIsNone(self.db.get_setting('shorts_story:2025-11-17'), '사용자 기록에는 시연 자막을 넣지 않음')
+        dates = sorted({item['date'] for item in previous})
+        for version in range(max(sum(1 for i in previous if i['date'] == d) for d in dates)):
+            with self.subTest(version=version):
+                conn = sqlite3.connect(self.db.db_path)
+                conn.execute('DELETE FROM diary'); conn.execute('DELETE FROM settings')
+                for date in dates:
+                    item = [i for i in previous if i['date'] == date][min(version, sum(1 for i in previous if i['date'] == date) - 1)]
+                    digest = hashlib.sha256(item['content'].encode()).hexdigest()
+                    conn.execute('INSERT INTO diary (date, content, content_hash, image_path, is_demo, updated_at) VALUES (?, ?, ?, ?, 1, ?)',
+                                 (item['date'], item['content'], digest, item['image_path'], 'x'))
+                conn.commit(); conn.close()
+                self.db.save_diary('2025-11-17', '내가 고쳐 쓴 기록')  # edited by the user: is_demo becomes 0
+                self.db.load_demo_data()
+                self.assertEqual(self.db.get_diary('2024-11-17')['content'], current[0]['content'])
+                self.assertEqual(self.db.get_diary('2025-11-17')['content'], '내가 고쳐 쓴 기록')
+                self.assertEqual(self.db.get_diary('2026-11-17')['content'], current[2]['content'])
+                self.assertIsNone(self.db.get_setting('shorts_story:2025-11-17'), '사용자 기록에는 시연 자막을 넣지 않음')
 
     def test_demo_captions_need_no_ai_call_and_respect_existing_story(self):
         self.db.load_demo_data()
@@ -121,7 +126,7 @@ class DemoDataTests(unittest.TestCase):
             status, story = self.request('POST', '/api/shorts/story', {**entry, 'consent': True})
         provider.assert_not_called()
         self.assertEqual((status, story['demo'], story['credits_charged']), (200, True, 0))
-        self.assertEqual(story['captions'][0], '리허설 첫 소절부터 박자를 놓쳤다')
+        self.assertEqual(story['captions'][0], '휴강 문자 받고 지은이랑 은행나무길을 걸었어')
         custom = json.dumps({'version': 1, 'content_hash': entry['content_hash'], 'captions': ['내가 고친 문장'], 'edited': True}, ensure_ascii=False)
         self.db.set_setting('shorts_story:2024-11-17', custom)
         self.db.load_demo_data()

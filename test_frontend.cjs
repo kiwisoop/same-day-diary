@@ -71,13 +71,14 @@ app.dirtyFlags = {};
 
 (async () => {
   let opened=0;
-  const names=['shorts-status','make-shorts','close-shorts','dialog-shorts','shorts-video','download-shorts','shorts-captions','shorts-date','shorts-original','shorts-image','shorts-story','shorts-edit','retry-story','make-scene-images','scene-previews'];
-  const elements=Object.fromEntries(names.map(id=>[id,{disabled:false,hidden:true,textContent:'',value:'',children:[],addEventListener(){},removeEventListener(){},showModal(){opened++;},pause(){},replaceChildren(){this.children=[];},appendChild(child){this.children.push(child);}}]));
-  context.document={getElementById:id=>elements[id],createElement:()=>({textContent:''})};
+  const names=['shorts-status','make-shorts','close-shorts','dialog-shorts','shorts-video','download-shorts','shorts-captions','shorts-date','shorts-story','retry-story','shorts-ai-video','shorts-video-cost'];
+  const elements=Object.fromEntries(names.map(id=>[id,{disabled:false,hidden:true,checked:false,textContent:'',value:'',children:[],addEventListener(){},removeEventListener(){},showModal(){opened++;},pause(){},replaceChildren(){this.children=[];},appendChild(child){this.children.push(child);}}]));
+  const makeNode=()=>({textContent:'',value:'',disabled:false,children:[],listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},setAttribute(){},appendChild(child){this.children.push(child);}});
+  context.document={getElementById:id=>elements[id],createElement:makeNode,querySelectorAll:()=>elements['shorts-story'].children.map(li=>li.children[0])};
   const entry={date:'2024-11-17',content_hash:'saved-version',content:'친구와 산책했다.\n기분이 좋아졌다.',image_path:'/assets/demo-walk.png',image_stale:false};
   app.entries={2024:entry};
   let warning;app.showInfoDialog=title=>{warning=title;};
-  let storyCalls=0,videoCalls=0;
+  let storyCalls=0,videoCalls=0,lastBody;
   const captions=['조급했던 아침','친구와 걸으며 마음이 편안해졌다'];
   context.fetch=async (url,options)=>{
     assert.equal(app.requestInProgress,true);
@@ -87,21 +88,27 @@ app.dirtyFlags = {};
       assert.deepEqual(JSON.parse(options.body),{date:entry.date,content_hash:entry.content_hash,consent:true});
       return {ok:true,json:async()=>({captions,credits_charged:0.5,cached:false})};
     }
-    assert.equal(url,'/api/shorts');videoCalls++;
-    assert.deepEqual(JSON.parse(options.body).captions,captions);
+    assert.equal(url,'/api/shorts');videoCalls++;lastBody=JSON.parse(options.body);
     return {ok:true,json:async()=>({url:'/videos/sample.mp4',seconds:8})};
   };
+  app.videoInfo={estimated_credits:60};
   await app.showShortsDialog(2024);
   assert.equal(opened,1);
   assert.equal(storyCalls,1,'일기에서 자동으로 이야기를 구성');
   assert.equal(elements['shorts-captions'].value,captions.join('\n'));
-  assert.equal(elements['shorts-original'].textContent,entry.content);
   assert.equal(elements['shorts-story'].children.length,2);
-  assert.equal(elements['shorts-edit'].hidden,false);
+  assert.match(elements['shorts-video-cost'].textContent,/영상 2개.*120크레딧/,'장면 수에 맞는 최대 비용 안내');
   assert.equal(elements['make-shorts'].disabled,false);
   assert.equal(app.requestInProgress,false);
+  // Tapping a sentence and typing edits that scene only.
+  const second=elements['shorts-story'].children[1].children[0];
+  assert.equal(second.value,captions[1]);
+  second.value='친구와  걸었어'; second.listeners.input();
+  assert.equal(elements['shorts-captions'].value,'조급했던 아침\n친구와 걸었어');
   await app.makeShorts();
   assert.equal(videoCalls,1);
+  assert.deepEqual(lastBody.captions,['조급했던 아침','친구와 걸었어']);
+  assert.equal(lastBody.clips,false,'체크하지 않으면 AI 영상 없이 크레딧 없음');
   assert.equal(elements['shorts-video'].src,'/videos/sample.mp4');
   assert.equal(elements['download-shorts'].href,'/videos/sample.mp4');
   app.dirtyFlags[2024]=true;
@@ -113,45 +120,46 @@ app.dirtyFlags = {};
   app.entries[2024]={...entry,content:'긴 일기 원문'.repeat(200)};
   await app.showShortsDialog(2024);
   assert.equal(storyCalls,2,'긴 원문도 글자 잘라내기 대신 AI 구성');
-  assert.equal(elements['shorts-original'].textContent,app.entries[2024].content);
   elements['shorts-captions'].value=['아침 공부','친구와 산책','저녁 차'].join('\n');
-  let sceneCalls=0,checkCalls=0,costPrompt='';
+  app.renderShortsStory();
+  elements['shorts-ai-video'].checked=true;
+  let clipCalls=0,clipChecks=0,costPrompt='',clipPending=1;videoCalls=0;
   context.fetch=async(url,options)=>{
-    assert.equal(url,'/api/shorts/scene');
     const body=JSON.parse(options.body);
-    assert.equal(elements['shorts-captions'].disabled,true);
-    if(body.check_only){checkCalls++;assert.equal(body.consent,undefined);return {ok:true,json:async()=>({cached:body.caption==='아침 공부'})};}
-    sceneCalls++;
-    assert.equal(body.consent,true);
-    return {ok:true,json:async()=>({url:'/media/picture.png',credits_charged:15})};
+    assert.equal(elements['shorts-ai-video'].disabled,true);
+    if(url==='/api/shorts/clip'){
+      if(body.check_only){clipChecks++;assert.equal(body.consent,undefined);return {ok:true,json:async()=>({cached:body.caption==='저녁 차',processing:false})};}
+      clipCalls++; assert.equal(body.consent,true);
+      // The first clip answers "still processing" once; the page asks again instead of failing.
+      if(body.caption==='아침 공부'&&clipPending){clipPending--;return {ok:true,status:202,json:async()=>({status:'processing',credits_charged:60})};}
+      return {ok:true,json:async()=>({status:'completed',credits_charged:body.caption==='아침 공부'?0:60})};
+    }
+    assert.equal(url,'/api/shorts');videoCalls++;lastBody=body;
+    return {ok:true,json:async()=>({url:'/videos/clip.mp4',seconds:12})};
   };
   app.imageConfigured=true;
   context.confirm=message=>{costPrompt=message;return false;};
-  await app.prepareSceneImages();
-  assert.equal(checkCalls,3); assert.equal(sceneCalls,0,'비용 확인을 취소하면 생성 요청 없음');
-  assert.match(costPrompt,/2장.*30크레딧/,'캐시에 없는 장수만 안내');
-  assert.equal(elements['make-scene-images'].disabled,false); assert.equal(app.requestInProgress,false);
+  await app.makeShorts();
+  assert.equal(clipChecks,3); assert.equal(clipCalls,0,'비용 확인을 취소하면 생성 요청 없음'); assert.equal(videoCalls,0);
+  assert.match(costPrompt,/장면 영상 2개.*120크레딧/,'이미 만든 영상은 빼고 안내');
+  assert.equal(app.requestInProgress,false); assert.equal(elements['shorts-ai-video'].disabled,false);
   context.confirm=()=>true;
-  await app.prepareSceneImages();
-  assert.equal(sceneCalls,3); assert.equal(elements['scene-previews'].children.length,3);
-  assert.equal(app.sceneImagesReady,true);
-  checkCalls=0;sceneCalls=0;
+  await app.makeShorts();
+  assert.equal(clipCalls,4,'진행 중이던 영상은 다시 물어 완료까지 기다림');
+  assert.equal(videoCalls,1); assert.equal(lastBody.clips,true);
+  assert.match(elements['shorts-status'].textContent,/AI 영상 180크레딧/,'영상 60+0+60+60 합계');
   context.fetch=async(url,options)=>{
-    if(JSON.parse(options.body).check_only){checkCalls++;return {ok:true,json:async()=>({cached:false})};}
-    sceneCalls++;
-    return sceneCalls===1 ? {ok:true,json:async()=>({url:'/media/a.png',credits_charged:15})} : {ok:false,json:async()=>({error:'생성 실패.'})};
+    if(JSON.parse(options.body).check_only) return {ok:true,json:async()=>({cached:false})};
+    return {ok:false,json:async()=>({error:'생성 실패.'})};
   };
-  await app.prepareSceneImages();
-  assert.match(elements['shorts-status'].textContent,/준비된 그림 1장은 보관/);
-  assert.equal(app.sceneImagesReady,false);
-  context.fetch=async(url,options)=>({ok:true,json:async()=>({cached:false})});
+  await app.makeShorts();
+  assert.match(elements['shorts-status'].textContent,/완성된 영상 장면은 보관/);
+  context.fetch=async()=>({ok:true,json:async()=>({cached:false})});
   app.imageConfigured=false;
-  await app.prepareSceneImages();
+  await app.makeShorts();
   assert.match(elements['shorts-status'].textContent,/API 키를 설정/);
-  assert.doesNotMatch(elements['shorts-status'].textContent,/사용량/,'요청 전 차단은 과금 안내 불필요');
-  app.imageConfigured=true;context.confirm=()=>false;
-  app.renderShortsStory();
-  assert.equal(app.sceneImagesReady,false,'자막을 바꾸면 이전 그림 구성을 사용하지 않음');
+  assert.doesNotMatch(elements['shorts-status'].textContent,/보관/,'요청 전 차단은 과금 안내 불필요');
+  app.imageConfigured=true;elements['shorts-ai-video'].checked=false;
   context.fetch=async()=>{throw new Error('연결 실패');};
   await app.prepareShortsStory();
   assert.equal(elements['retry-story'].hidden,false);
@@ -162,13 +170,14 @@ app.dirtyFlags = {};
   elements['shorts-captions'].value='가'.repeat(65);
   await app.makeShorts();
   assert.match(elements['shorts-status'].textContent,/64자 이내/);
-  console.log('일기 기반 자동 구성·선택 수정·원문 보존·미저장/오래된 그림 차단·실패 복구·영상 연결 검사 통과');
+  console.log('일기 기반 자동 구성·문장 바로 수정·AI 영상 선택·비용 확인·실패 복구·영상 연결 검사 통과');
 })().then(()=>v2Checks()).catch(error=>{console.error(error);process.exitCode=1;});
 
 // v2: daily question and past-entry banner (runs after the async shorts checks above).
 function v2Checks() {
   // Index is the day of a leap year, so Mar 1 is always 60 and Feb 29 keeps its own slot (59).
   const Q = vm.runInContext('DAILY_QUESTIONS', context);
+  const CHEER = vm.runInContext('CHEER_LINES', context);
   assert.equal(app.dailyQuestion(0,1), Q[0]);
   assert.equal(app.dailyQuestion(1,29), Q[59 % Q.length], '윤일 고유 질문');
   assert.equal(app.dailyQuestion(2,1), Q[60 % Q.length], '평년에도 3월 1일은 같은 질문');
@@ -201,20 +210,44 @@ function v2Checks() {
   assert.match(els['past-banner-text'].textContent, /2025년의 오늘은 아직/, '미래 날짜(2026)는 제외하고 가장 최근 해를 기준');
   app.koreanToday = realToday;
   console.log('오늘의 질문·지난 기록 안내 검사 통과');
-  // Music: selectors filled from settings, credit shown, choice sent with the request.
-  const listeners = {};
-  const mk = id => ({id, value:'', children:[], textContent:'', replaceChildren(...c){this.children=c;}, addEventListener(ev, fn){listeners[id]=fn;}});
-  const mus = {'shorts-music':mk('shorts-music'),'three-year-music':mk('three-year-music'),'shorts-music-credit':mk('c1'),'three-year-music-credit':mk('c2')};
-  context.document = {getElementById: id => mus[id]};
-  context.Option = function(label, value){ this.label = label; this.value = value; };
+  // Music: no picker; the default track's credit is shown and requests leave music to the server default.
+  const mus = {'shorts-music-credit':{textContent:''}};
+  context.document = {getElementById: id => mus[id] || null};
   app.setupMusic({default:'bright', tracks:[{id:'bright',label:'경쾌한 어쿠스틱',credit:'Redwood Trail — Jason Shaw, CC BY 3.0'},{id:'calm',label:'잔잔한 기타',credit:'Acoustic Meditation — Jason Shaw, CC BY 3.0 US'}]});
-  assert.equal(mus['shorts-music'].children.length, 2);
-  assert.equal(app.selectedMusic('shorts-music'), 'bright');
-  assert.match(mus['shorts-music-credit'].textContent, /Redwood Trail/);
-  mus['shorts-music'].value = 'calm'; listeners['shorts-music']();
-  assert.match(mus['shorts-music-credit'].textContent, /Acoustic Meditation/, '곡을 바꾸면 출처 표기도 바뀜');
-  assert.equal(app.selectedMusic('missing'), undefined, '선택 칸이 없으면 서버 기본 곡');
-  console.log('배경음악 선택·출처 표기 검사 통과');
+  assert.match(mus['shorts-music-credit'].textContent, /Redwood Trail/, '기본 곡 출처 표기');
+  assert.equal(app.selectedMusic('shorts-music'), undefined, '선택 칸이 없으면 서버 기본 곡');
+  // Cheer line: invite to write today, praise once today is written, a saying on other dates.
+  const cheer = {textContent:''};
+  context.document = {getElementById: id => id === 'daily-cheer' ? cheer : null};
+  const savedToday = app.koreanToday;
+  app.koreanToday = () => new Date(2026, 10, 25);
+  app.selectedMonth = 10; app.selectedDate = 25; app.entries = {2026: {date:'2026-11-25', content:''}};
+  assert.equal(app.cheerState(), 'invite'); app.updateCheer();
+  assert.ok(CHEER.invite.includes(cheer.textContent), '오늘 일기가 비어 있으면 작성 권유');
+  app.entries[2026].content = '오늘은 산책했다';
+  assert.equal(app.cheerState(), 'praise'); app.updateCheer();
+  assert.ok(CHEER.praise.includes(cheer.textContent), '오늘 일기를 쓰면 칭찬');
+  app.selectedDate = 24;
+  assert.equal(app.cheerState(), 'saying'); app.updateCheer();
+  assert.ok(CHEER.saying.includes(cheer.textContent), '다른 날짜는 명언·속담');
+  assert.equal(app.cheerLine(10, 24, 'saying'), app.cheerLine(10, 24, 'saying'), '같은 날짜는 같은 문구');
+  // Diary picture: faint background only once a picture exists; unsafe paths are ignored.
+  const classes = new Set(), props = {};
+  const wrap = {classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}, style:{setProperty:(k,v)=>{props[k]=v;}, removeProperty:k=>{delete props[k];}}};
+  context.document = {querySelector: sel => sel === '.diary-section[data-year="2026"]' ? {querySelector: () => wrap} : null};
+  app.setDiaryPicture(2026, null);
+  assert.ok(!classes.has('has-picture'), '그림 전에는 원래 모습');
+  app.setDiaryPicture(2026, '/media/0123456789abcdef0123456789abcdef.png');
+  assert.ok(classes.has('has-picture')); assert.equal(props['--diary-picture'], 'url("/media/0123456789abcdef0123456789abcdef.png")');
+  app.setDiaryPicture(2026, '/media/x.png") ; background:red');
+  assert.ok(!classes.has('has-picture'), '이상한 주소는 배경으로 쓰지 않음');
+  // Saved shorts from the sidebar: the selected day in each year that has come.
+  app.startYear = 2024; app.selectedMonth = 10; app.selectedDate = 25;
+  assert.deepEqual([...app.savedVideoDates()], ['2024-11-25','2025-11-25','2026-11-25']);
+  app.selectedDate = 26;
+  assert.deepEqual([...app.savedVideoDates()], ['2024-11-26','2025-11-26'], '오지 않은 날은 제외');
+  app.koreanToday = savedToday;
+  console.log('배경음악 기본 곡·출처 표기, 응원 문구, 일기 배경 그림, 보관한 쇼츠 날짜 검사 통과');
   // Narration: options shown only when the local voice exists; the checkbox decides the request value.
   const opts = [{hidden:true},{hidden:true}];
   const boxes = {'shorts-narration':{checked:true}, 'three-year-narration':{checked:false}};
@@ -230,4 +263,18 @@ function v2Checks() {
   app.setupNarration(undefined);
   assert.equal(app.narrationAvailable, false, '시연판(설정 없음)에서는 꺼짐');
   console.log('내레이션 선택 검사 통과');
+  // Spoken lines ('~구나'): optional, but must pair one-to-one with the scenes before any request is sent.
+  const sp = {'shorts-spoken':{value:' 그날 나는, 놓쳤구나. \n\n그래도 걸었구나.'}, 'shorts-captions':{value:'자막1\n자막2\n자막3'}, 'shorts-status':{textContent:''}};
+  context.document = {getElementById: id => sp[id]};
+  assert.equal(JSON.stringify(app.spokenLines()), JSON.stringify(['그날 나는, 놓쳤구나.', '그래도 걸었구나.']), '빈 줄은 무시');
+  let posted = false; const realFetch = context.fetch; context.fetch = () => { posted = true; return Promise.reject(new Error('no')); };
+  app.requestInProgress = false; app.shortsEntry = {date:'2024-11-17', content_hash:'h'};
+  return app.makeShorts().then(() => {
+    assert.equal(posted, false, '줄 수가 다르면 요청하지 않음');
+    assert.match(sp['shorts-status'].textContent, /3줄/);
+    context.fetch = realFetch;
+    context.document = {getElementById: () => undefined};
+    assert.equal(app.spokenLines().length, 0, '입력칸이 없으면 자막을 읽음');
+    console.log('읽어 줄 문장(~구나) 검사 통과');
+  });
 }

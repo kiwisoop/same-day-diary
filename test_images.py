@@ -73,7 +73,7 @@ class ImageAPITests(unittest.TestCase):
     def test_long_demo_is_sent_in_full_to_selected_image_model(self):
         entries = json.loads((Path(__file__).parent / 'demo_diaries.json').read_text())
         for entry in entries:
-            self.assertGreater(len(entry['content']), 1000)
+            self.assertGreater(len(entry['content']), 300)
             opener = Mock()
             opener.open.return_value = api_result()
             with patch.object(image_api, 'build_opener', return_value=opener):

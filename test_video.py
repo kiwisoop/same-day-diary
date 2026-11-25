@@ -115,7 +115,7 @@ class VideoTests(unittest.TestCase):
         with patch.object(server, 'Database', side_effect=AssertionError('시연은 DB를 사용하지 않습니다')):
             status, page, mime = self.request('GET', '/demo/long-diary')
             self.assertEqual((status, mime), (200, 'text/html; charset=utf-8'))
-            self.assertIn('1,013자'.encode(), page)
+            self.assertIn('휴강 문자'.encode(), page)  # the current demo diary text
             self.assertIn(b'/demo/three-year.mp4', page)
             self.assertEqual(self.request('GET', '/demo/three-year.mp4', headers={'Range':'bytes=0-15'})[0], 206)
             self.assertEqual(self.request('GET', '/demo/three-year-poster.png')[0], 200)

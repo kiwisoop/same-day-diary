@@ -2,6 +2,7 @@
 import json
 import re
 import threading
+import time
 import uuid
 import hashlib
 from datetime import datetime
@@ -13,13 +14,18 @@ from storage import Database, KST
 import image_api
 import story_api
 import narration
+import video_api
 from video_export import export_video, item_duration, make_card, make_ending, MUSIC, DEFAULT_MUSIC, ending_music
 
 ROOT = Path(__file__).resolve().parent
 IMAGE_LOCK = threading.Lock()
 VIDEO_LOCK = threading.Lock()
 STORY_LOCK = threading.Lock()
-STORY_VERSION = 1
+CLIP_LOCK = threading.Lock()
+CLIP_PATTERN = re.compile(r'[0-9a-f]{32}\.mp4')
+CLIP_WAIT = 150  # seconds one request keeps checking a clip job before answering "still processing"
+CLIP_POLL = 10
+STORY_VERSION = 2  # 2: one set of lines, shown and read aloud as-is
 MEDIA_PATTERN = re.compile(r'/media/[0-9a-f]{32}\.(png|jpg|webp)')
 FILES = {
     '/assets/MaruBuri-Regular.woff2': ('assets/MaruBuri-Regular.woff2', 'font/woff2'),
@@ -106,17 +112,21 @@ def prepare_story(db, data):
             cached = json.loads(db.get_setting(key, 'null'))
         except (ValueError, TypeError):
             cached = None
-        if (isinstance(cached, dict) and cached.get('version') == STORY_VERSION
+        if (isinstance(cached, dict) and (cached.get('version') == STORY_VERSION or cached.get('edited') is True)
                 and cached.get('content_hash') == entry['content_hash']
                 and isinstance(cached.get('captions'), list) and 1 <= len(cached['captions']) <= 8
                 and all(isinstance(line, str) and 1 <= len(line.strip()) <= 64 and '\n' not in line and '\r' not in line for line in cached['captions'])):
-            return 200, {'captions': cached['captions'], 'cached': True, 'credits_charged': 0, 'edited': cached.get('edited') is True,
+            return 200, {'captions': cached['captions'], 'narration': story_api.validate_narration(cached.get('narration'), len(cached['captions'])),
+                         'cached': True, 'credits_charged': 0, 'edited': cached.get('edited') is True,
                          'demo': cached.get('demo') is True}
         story = story_api.generate_story(entry['date'], entry['content'])
         if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
             return 409, {'error': '구성 중 일기가 바뀌어 결과를 연결하지 않았습니다. 원본은 유지됩니다.'}
         db.set_setting(key, json.dumps({'version': STORY_VERSION, 'content_hash': entry['content_hash'],
-                                       'captions': story['captions']}, ensure_ascii=False))
+                                       'captions': story['captions'], 'narration': story.get('narration'),
+                                       'narrator': story.get('narrator'), 'others': story.get('others')}, ensure_ascii=False))
+        if story.get('narrator') and not story_api.validate_cast(db.get_setting(NARRATOR_KEY)):
+            db.set_setting(NARRATOR_KEY, story['narrator'])  # the diarist looks the same in every later diary too
         return 200, {**story, 'cached': False}
     finally:
         STORY_LOCK.release()
@@ -170,6 +180,97 @@ def create_scene(db, data):
         IMAGE_LOCK.release()
 
 
+NARRATOR_KEY = 'shorts_narrator'
+
+
+def clip_cast(db, entry):
+    """Who appears in this diary's clips: the same diarist across all diaries (demo diaries keep their own),
+    plus this diary's other people. Falls back to a fixed look so scenes never switch person."""
+    try:
+        cached = json.loads(db.get_setting('shorts_story:' + entry['date'], 'null'))
+    except (ValueError, TypeError):
+        cached = None
+    if not isinstance(cached, dict) or cached.get('content_hash') != entry['content_hash']:
+        cached = {}
+    own = story_api.validate_cast(cached.get('narrator'))
+    shared = story_api.validate_cast(db.get_setting(NARRATOR_KEY))
+    narrator = own if cached.get('demo') is True else (shared or own)
+    return narrator, story_api.validate_cast(cached.get('others'))
+
+
+def clip_key(entry, caption, cast=(None, None)):
+    # The people's look is part of the key: clips made with another look are never mixed in.
+    digest = hashlib.sha256((entry['content_hash'] + '\n' + caption + '\n' + json.dumps(list(cast))).encode()).hexdigest()
+    return 'shorts_clip:' + entry['date'] + ':' + digest
+
+
+def clip_state(db, entry, caption):
+    try:
+        state = json.loads(db.get_setting(clip_key(entry, caption, clip_cast(db, entry)), 'null'))
+    except (ValueError, TypeError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def clip_file(db, entry, caption):
+    """The finished AI clip of this scene, or None."""
+    state = clip_state(db, entry, caption)
+    name = state.get('file') if state and state.get('status') == 'completed' else None
+    if not isinstance(name, str) or not CLIP_PATTERN.fullmatch(name):
+        return None
+    file = Path(db.db_path).parent / 'clips' / name
+    return file if file.is_file() and not file.is_symlink() else None
+
+
+def create_clip(db, data):
+    """AI video clip (Seedance) made from the scene sentence alone. A started job is stored first, so asking again
+    keeps checking the same job and never pays twice."""
+    caption = story_api.validate_captions([data.get('caption')])[0]
+    entry = db.get_diary(data.get('date'))
+    if not entry['content'] or entry['content_hash'] != data.get('content_hash'):
+        return 409, {'error': '일기가 변경됐습니다. 저장된 내용을 확인해 주세요.'}
+    state = clip_state(db, entry, caption)
+    if data.get('check_only') is True:
+        return 200, {'cached': clip_file(db, entry, caption) is not None,
+                     'processing': bool(state and state.get('status') == 'processing')}
+    if clip_file(db, entry, caption):
+        return 200, {'status': 'completed', 'cached': True, 'credits_charged': 0}
+    if not CLIP_LOCK.acquire(blocking=False):
+        return 409, {'error': '다른 장면 영상을 만들고 있어요. 잠시 기다려 주세요.'}
+    try:
+        cast = clip_cast(db, entry)
+        key = clip_key(entry, caption, cast)
+        credits = 0
+        if not (state and state.get('status') == 'processing' and isinstance(state.get('operation_id'), str)):
+            if data.get('consent') is not True:
+                raise ValueError('장면 영상의 문장 전송과 생성 비용을 확인해 주세요.')
+            operation, credits = video_api.submit_clip(caption, *cast)
+            state = {'status': 'processing', 'operation_id': operation}
+            db.set_setting(key, json.dumps(state))
+        deadline = time.monotonic() + CLIP_WAIT
+        while True:
+            status, uri = video_api.poll_clip(state['operation_id'])
+            if status == 'completed':
+                body = video_api.download_clip(uri)
+                if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
+                    return 409, {'error': '생성 중 일기가 바뀌어 영상을 연결하지 않았습니다.'}
+                folder = Path(db.db_path).parent / 'clips'
+                folder.mkdir(mode=0o700, exist_ok=True)
+                name = uuid.uuid4().hex + '.mp4'
+                with (folder / name).open('xb') as output:
+                    output.write(body)
+                db.set_setting(key, json.dumps({'status': 'completed', 'file': name}))
+                return 200, {'status': 'completed', 'cached': False, 'credits_charged': credits}
+            if status == 'failed':
+                db.set_setting(key, 'null')
+                raise ValueError('장면 영상 생성이 실패했어요. 실패한 작업의 크레딧은 학교 API에서 환불돼요. 다시 시도할 수 있어요.')
+            if time.monotonic() >= deadline:
+                return 202, {'status': 'processing', 'credits_charged': credits}
+            time.sleep(CLIP_POLL)
+    finally:
+        CLIP_LOCK.release()
+
+
 def create_three_year_video(db, data):
     music = chosen_music(data)  # validate before any paid story call
     narrate = chosen_narration(data)
@@ -200,6 +301,7 @@ def create_three_year_video(db, data):
         if status != 200:
             return status, {**story, 'may_charge': True}
         captions = story['captions']
+        spoken = story_api.validate_narration(story.get('narration'), len(captions)) or captions
         # Reuse each year's opening and closing scene, without inventing comparisons.
         for index in dict.fromkeys((0, len(captions)-1)):
             caption = captions[index]
@@ -210,7 +312,11 @@ def create_three_year_video(db, data):
                     raise ValueError('각 연도의 최신 수채화를 먼저 만들어 주세요.')
             if not image.is_file() or image.is_symlink():
                 raise ValueError('저장된 그림을 찾지 못했습니다.')
-            items.append({'date': entry['date'], 'caption': caption, 'image_path': image})
+            item = {'date': entry['date'], 'caption': caption, 'image_path': image, 'spoken': spoken[index]}
+            clip = clip_file(db, entry, caption)
+            if clip:
+                item['clip'] = clip
+            items.append(item)
     if any(db.get_diary(e['date'])['content_hash'] != e['content_hash'] for e in entries):
         return 409, {'error': '구성 중 일기가 바뀌었습니다. 다시 확인해 주세요.'}
     # Closing montage: the three years' watercolors side by side (already checked above, no new pictures).
@@ -236,6 +342,19 @@ def chosen_narration(data):
     return value
 
 
+def spoken_texts(scenes):
+    """What the voice reads per scene: the spoken line (or the caption), opening each diary with its date."""
+    texts, previous = [], None
+    for scene in scenes:
+        text = scene.get('spoken') or scene['caption']
+        if scene['date'] != previous:
+            year, month, day = scene['date'].split('-')
+            text = f'{int(year)}년 {int(month)}월 {int(day)}일. {text}'
+            previous = scene['date']
+        texts.append(text)
+    return texts
+
+
 def render_and_save_video(db, items, sources, kind, shorts, music=DEFAULT_MUSIC, switch_music=None, narrate=False):
     if not VIDEO_LOCK.acquire(blocking=False):
         return 409, {'error': '다른 영상을 만들고 있어요. 잠시 기다려 주세요.'}
@@ -247,7 +366,7 @@ def render_and_save_video(db, items, sources, kind, shorts, music=DEFAULT_MUSIC,
         if narrate and shorts:
             # Local voice (no credits); cached per sentence, so remaking a video reuses the same audio.
             scenes = [item for item in items if item.get('card') is not True]
-            voices = narration.synthesize([item['caption'] for item in scenes], Path(db.db_path).parent / 'narration')
+            voices = narration.synthesize(spoken_texts(scenes), Path(db.db_path).parent / 'narration')
             items = [dict(item) for item in items]
             scene_items = iter(item for item in items if item.get('card') is not True)
             for voice in voices:
@@ -277,6 +396,11 @@ def create_video(db, data, shorts=False):
         if (len(selection) != 1 or not isinstance(captions, list) or not 1 <= len(captions) <= 8
                 or any(not isinstance(caption, str) or not caption.strip() or len(caption) > 64 or '\n' in caption or '\r' in caption for caption in captions)):
             raise ValueError('일기 하나와 1~8개의 자막(장면당 64자 이내)을 확인해 주세요.')
+        spoken = data.get('spoken')
+        if spoken is not None:
+            spoken = story_api.validate_narration(spoken, len(captions))
+            if spoken is None:
+                raise ValueError(f'읽어 줄 문장은 장면과 같은 {len(captions)}줄, 줄마다 {story_api.NARRATION_MAX}자 이내로 확인해 주세요.')
     items = []
     seen = set()
     for item in selection:
@@ -296,36 +420,44 @@ def create_video(db, data, shorts=False):
             raise ValueError('먼저 선택한 일기의 그림을 만들어 주세요.')
         items.append({'date': entry['date'], 'caption': caption, 'image_path': image})
     if shorts:
-        items = [{**items[0], 'caption': caption.strip()} for caption in captions]
-        if data.get('scene_images') is True:
-            # At most three pictures, reused in order across the complete story.
-            anchors = sorted({0, (len(captions)-1)//2, len(captions)-1})
-            for index, item in enumerate(items):
-                anchor = max(a for a in anchors if a <= index)
-                _, image = scene_image(db, entry, captions[anchor].strip())
-                if image is None:
-                    raise ValueError('이 이야기의 장면 그림을 먼저 준비해 주세요.')
-                item['image_path'] = image
+        items = [{**items[0], 'caption': caption.strip(), **({'spoken': spoken[index]} if spoken else {})}
+                 for index, caption in enumerate(captions)]
+        if data.get('clips') is True or data.get('scene_images') is True:
+            # One AI clip per scene, so no clip repeats. A scene without one shows its older
+            # scene picture if there is one, otherwise the diary picture.
+            for item in items:
+                _, image = scene_image(db, entry, item['caption'])
+                if image is not None:
+                    item['image_path'] = image
+                clip = clip_file(db, entry, item['caption'])
+                if clip:
+                    item['clip'] = clip
     status, result = render_and_save_video(db, items, {i['date']: i['content_hash'] for i in selection}, 'day' if shorts else 'memory', shorts,
                                            chosen_music(data), None, chosen_narration(data))
     if shorts and status == 200:
-        remember_edited_story(db, entry, [caption.strip() for caption in captions])
+        remember_edited_story(db, entry, [caption.strip() for caption in captions], spoken)
     return status, result
 
 
-def remember_edited_story(db, entry, captions):
-    """Keep the captions used in a finished day video so reopening and the 3-year video reuse them."""
+def remember_edited_story(db, entry, captions, spoken=None):
+    """Keep the captions (and spoken lines) used in a finished day video so reopening and the 3-year video reuse them."""
     key = 'shorts_story:' + entry['date']
     try:
         cached = json.loads(db.get_setting(key, 'null'))
     except (ValueError, TypeError):
         cached = None
-    if not isinstance(cached, dict) or cached.get('content_hash') != entry['content_hash'] or cached.get('captions') == captions:
+    if not isinstance(cached, dict) or cached.get('content_hash') != entry['content_hash']:
+        return
+    if spoken is None and cached.get('captions') == captions:
+        spoken = cached.get('narration')  # unchanged captions keep their spoken lines
+    if cached.get('captions') == captions and cached.get('narration') == spoken:
         return
     if db.get_diary(entry['date'])['content_hash'] != entry['content_hash']:
         return
     db.set_setting(key, json.dumps({'version': STORY_VERSION, 'content_hash': entry['content_hash'], 'captions': captions,
-                                   'ai_captions': cached.get('ai_captions', cached['captions']), 'edited': True}, ensure_ascii=False))
+                                   'narration': spoken, 'ai_captions': cached.get('ai_captions', cached['captions']),
+                                   'narrator': cached.get('narrator'), 'others': cached.get('others'),
+                                   'demo': cached.get('demo') is True, 'edited': True}, ensure_ascii=False))
 
 
 class DiaryHandler(BaseHTTPRequestHandler):
@@ -433,7 +565,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                 return
             routes = {('GET', '/api/settings'), ('POST', '/api/settings'),
                       ('GET', '/api/diary'), ('POST', '/api/diary'),
-                      ('DELETE', '/api/diary'), ('POST', '/api/demo'), ('POST', '/api/image'), ('GET', '/api/memories'), ('POST', '/api/video'), ('POST', '/api/shorts'), ('POST', '/api/shorts/story'), ('POST', '/api/shorts/scene'), ('POST', '/api/three-year-video'), ('GET', '/api/videos')}
+                      ('DELETE', '/api/diary'), ('POST', '/api/demo'), ('POST', '/api/image'), ('GET', '/api/memories'), ('POST', '/api/video'), ('POST', '/api/shorts'), ('POST', '/api/shorts/story'), ('POST', '/api/shorts/scene'), ('POST', '/api/shorts/clip'), ('POST', '/api/three-year-video'), ('GET', '/api/videos')}
             if (self.command, path) not in routes:
                 self.reply(404, {'error': '페이지를 찾을 수 없습니다.'})
                 return
@@ -450,6 +582,7 @@ class DiaryHandler(BaseHTTPRequestHandler):
                                            'estimated_credits': image_api.DEFAULT_CREDITS}
                     result['music'] = {'default': DEFAULT_MUSIC, 'tracks': [{'id': key, 'label': label, 'credit': credit} for key, (_, label, credit) in MUSIC.items()]}
                     result['narration'] = {'available': narration.available(), 'credit': narration.CREDIT}
+                    result['video_api'] = {'model': video_api.MODEL, 'estimated_credits': video_api.DEFAULT_CREDITS, 'seconds': video_api.CLIP_SECONDS}
             elif path == '/api/memories':
                 result = {'entries': db.list_diaries(db.get_setting('start_year', 2024))}
             elif path == '/api/videos':
@@ -459,6 +592,10 @@ class DiaryHandler(BaseHTTPRequestHandler):
                 result = {'videos': db.list_videos(dates[0])}
             elif path == '/api/shorts/scene':
                 status, result = create_scene(db, data)
+                self.reply(status, result)
+                return
+            elif path == '/api/shorts/clip':
+                status, result = create_clip(db, data)
                 self.reply(status, result)
                 return
             elif path == '/api/three-year-video':

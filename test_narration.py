@@ -167,7 +167,7 @@ class NarrationServerTests(unittest.TestCase):
                 patch.object(server, 'export_video', side_effect=encode), patch.object(server, 'item_duration', return_value=4):
             status, movie = self.request('POST', '/api/shorts', {'items': [entry], 'captions': ['아침 산책', '저녁 차'], 'narration': True})
         self.assertEqual(status, 200)
-        self.assertEqual(seen['texts'], ['아침 산책', '저녁 차'])
+        self.assertEqual(seen['texts'], ['2024년 11월 17일. 아침 산책', '저녁 차'], '첫 장면 앞에 날짜를 읽음')
         self.assertEqual([item['narration'].name for item in seen['items']], ['0.wav', '1.wav'])
         self.assertEqual(movie['voice'], narration.CREDIT)
 
@@ -179,6 +179,88 @@ class NarrationServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         synth.assert_not_called()
         self.assertNotIn('voice', movie)
+
+
+class SpokenLineTests(unittest.TestCase):
+    """One set of lines: shown on screen and read aloud as-is; old edited spoken lines still work. No paid API calls."""
+    setUp = test_app.DiaryTests.setUp
+    request = test_app.DiaryTests.request
+
+    def story_response(self, body):
+        import io
+        opener = Mock()
+        opener.open.return_value = io.BytesIO(json.dumps({'choices': [{'message': {'content': json.dumps(body, ensure_ascii=False)}}]}).encode())
+        with patch.object(server.story_api, 'get_api_key', return_value='fake-key'), patch.object(server.story_api, 'build_opener', return_value=opener):
+            result = server.story_api.generate_story('2024-11-17', '가상 일기')
+        return result, json.loads(opener.open.call_args.args[0].data)
+
+    def test_prompt_asks_for_one_natural_spoken_line_per_scene(self):
+        result, payload = self.story_response({'lines': ['박자를 놓쳐 버렸어', '친구랑 은행나무 길을 걸었지']})
+        system = payload['messages'][0]['content']
+        self.assertIn('"lines"', system); self.assertIn('그대로 목소리로 읽히는', system)
+        self.assertIn('"~했구나", "~했네")는 쓰지 마세요', system, '~구나 말투 금지')
+        self.assertIn('이웃한 두 문장의 어미가 같지 않게', system)
+        self.assertNotIn('그날 나는,"처럼', system)
+        self.assertEqual(result['captions'], ['박자를 놓쳐 버렸어', '친구랑 은행나무 길을 걸었지'])
+        self.assertIsNone(result['narration'], '읽는 문장을 따로 두지 않고 자막을 그대로 읽음')
+        legacy, _ = self.story_response({'captions': ['하나'], 'narration': ['다른 문장']})
+        self.assertEqual((legacy['captions'], legacy['narration']), (['하나'], None))
+
+    def test_validate_narration(self):
+        self.assertEqual(server.story_api.validate_narration([' 그날  나는 '], 1), ['그날 나는'])
+        for lines, count in ((['a'], 2), (['가' * 101], 1), ([''], 1), ([None], 1), ('문장', 1)):
+            self.assertIsNone(server.story_api.validate_narration(lines, count))
+
+    def test_voice_reads_spoken_line_with_date_before_each_diary(self):
+        scenes = [{'date': '2024-11-17', 'caption': '자막1', 'spoken': '그날 나는, 놓쳤구나.'},
+                  {'date': '2024-11-17', 'caption': '자막2'},
+                  {'date': '2025-11-17', 'caption': '자막3', 'spoken': '실수했구나.'}]
+        self.assertEqual(server.spoken_texts(scenes),
+                         ['2024년 11월 17일. 그날 나는, 놓쳤구나.', '자막2', '2025년 11월 17일. 실수했구나.'])
+
+    def test_demo_story_reads_its_captions_and_old_demo_story_is_upgraded(self):
+        self.db.load_demo_data()
+        entry = self.db.get_diary('2024-11-17')
+        status, story = self.request('POST', '/api/shorts/story', {'date': entry['date'], 'content_hash': entry['content_hash'], 'consent': True})
+        self.assertEqual(status, 200)
+        self.assertIsNone(story['narration'], '자막을 그대로 읽음')
+        self.assertTrue(all(not line.endswith(('다', '다.', '구나', '구나.')) for line in story['captions']), '~다·~구나로 끝나지 않음')
+        self.assertTrue(all(len(line) <= 40 for line in story['captions']))
+        key = 'shorts_story:2024-11-17'
+        old = {**json.loads(self.db.get_setting(key)), 'version': 1, 'captions': ['박자를 놓쳤다'], 'narration': ['그날 나는, 놓쳤구나.']}
+        self.db.set_setting(key, json.dumps(old, ensure_ascii=False))
+        self.db.load_demo_data()
+        upgraded = json.loads(self.db.get_setting(key))
+        self.assertEqual((upgraded['version'], upgraded['captions'], upgraded['narration']), (2, story['captions'], None), '옛 시연 이야기는 새 문장으로 바뀜')
+        edited = {**old, 'captions': ['내가 고친 자막'], 'edited': True}; edited.pop('demo')
+        self.db.set_setting(key, json.dumps(edited, ensure_ascii=False))
+        self.db.load_demo_data()
+        self.assertEqual(json.loads(self.db.get_setting(key))['captions'], ['내가 고친 자막'], '사용자가 고친 이야기는 그대로')
+        status, reopened = self.request('POST', '/api/shorts/story', {'date': entry['date'], 'content_hash': entry['content_hash'], 'consent': True})
+        self.assertEqual(reopened['captions'], ['내가 고친 자막'], '예전 버전이어도 고친 이야기는 다시 씀')
+
+    def test_shorts_use_edited_spoken_lines_and_remember_them(self):
+        entry = test_enhancements.EnhancementTests.entry_with_image(self)
+        self.db.set_setting('shorts_story:' + entry['date'], json.dumps(
+            {'version': 1, 'content_hash': entry['content_hash'], 'captions': ['아침 산책', '저녁 차'], 'narration': None}, ensure_ascii=False))
+        seen = {}
+
+        def voices(texts, folder):
+            seen['texts'] = texts
+            return [Path(folder) / f'{index}.wav' for index, _ in enumerate(texts)]
+
+        with patch.object(server.narration, 'available', return_value=True), patch.object(server.narration, 'synthesize', side_effect=voices), \
+                patch.object(server, 'export_video', side_effect=lambda items, path, **k: path.write_bytes(b'v')), \
+                patch.object(server, 'item_duration', return_value=4):
+            body = {'items': [entry], 'captions': ['아침 산책', '저녁 차'], 'narration': True,
+                    'spoken': ['그날 나는, 아침에 산책했구나.', '저녁엔 차를 마셨네.']}
+            self.assertEqual(self.request('POST', '/api/shorts', body)[0], 200)
+            self.assertEqual(self.request('POST', '/api/shorts', {**body, 'spoken': ['한 줄만']})[0], 400)
+        self.assertEqual(seen['texts'], ['2024년 11월 17일. 그날 나는, 아침에 산책했구나.', '저녁엔 차를 마셨네.'])
+        saved = json.loads(self.db.get_setting('shorts_story:' + entry['date']))
+        self.assertEqual(saved['narration'], ['그날 나는, 아침에 산책했구나.', '저녁엔 차를 마셨네.'])
+        status, story = self.request('POST', '/api/shorts/story', {'date': entry['date'], 'content_hash': entry['content_hash'], 'consent': True})
+        self.assertEqual(story['narration'], saved['narration'], '다시 열면 고친 읽는 문장을 불러옴')
 
 
 if __name__ == '__main__':
