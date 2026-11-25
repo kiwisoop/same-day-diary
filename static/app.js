@@ -116,8 +116,8 @@ class DiaryApp {
       const consent = document.getElementById('image-consent');
       consent.disabled = !this.imageConfigured;
       document.getElementById('image-api-status').textContent = this.imageConfigured
-        ? '키가 설정되어 있어요. 실제 연결은 첫 생성 때 확인합니다.'
-        : '학교 API 키를 로컬 설정 파일에 입력해 주세요. 일기 저장은 연결 없이도 가능합니다.';
+        ? '키가 설정되어 있어요. 실제 연결은 처음 그림을 만들 때 확인해요.'
+        : '학교 API 키를 로컬 설정 파일(.env)에 넣어 주세요. 일기 저장은 키 없이도 돼요.';
       this.setupMusic(data.music);
       this.setupNarration(data.narration);
       this.videoInfo = data.video_api || null;
@@ -756,7 +756,7 @@ class DiaryApp {
       this.renderDiarySections();
       await this.loadDiarySections();
     } catch (error) {
-      this.showInfoDialog('설정 저장 실패', '기존 기간과 기록을 유지했습니다. 다시 시도해 주세요.');
+      this.showInfoDialog('시작 연도를 바꾸지 못했어요', '기존 기간과 기록은 그대로예요. 다시 시도해 주세요.');
       this.updateStartYearSelect();
     } finally {
       this.requestInProgress = false;
@@ -790,7 +790,7 @@ class DiaryApp {
       this.renderDiarySections();
       await this.loadDiarySections();
       
-      this.showInfoDialog('시연 데이터 로드됨', '2024·2025·2026년 11월 17일의 가상 기록입니다. 기존 기록은 보존했습니다.');
+      this.showInfoDialog('시연 기록을 불러왔어요', '2024·2025·2026년 11월 17일의 가상 일기예요. 직접 쓴 기록은 그대로 두었어요.');
     } catch (error) {
       alert('시연 데이터 로드 실패');
     } finally {
@@ -999,6 +999,8 @@ class DiaryApp {
     if (entries.some((e,i)=>this.dirtyFlags[this.startYear+i] || !e || !e.content || !e.image_path || e.image_stale || e.date !== this.getDateString(this.startYear+i,this.selectedMonth,this.selectedDate))) {
       this.showInfoDialog('세 해의 기록을 준비해 주세요','같은 날짜의 세 해 일기를 모두 저장하고 최신 수채화를 만든 다음 연결할 수 있어요.'); return;
     }
+    // Demo stories are pre-written; for real diaries a year without a saved story is composed by the school AI.
+    if (!entries.every(e => e.is_demo) && !confirm('세 해의 일기를 한 편의 3년 쇼츠로 이어요. 이야기를 이미 만든 해는 그대로 쓰고, 없는 해만 학교 AI로 구성해요(크레딧 사용, 일기 본문 전송). 계속할까요?')) return;
     const dialog = document.getElementById('dialog-videos');
     document.getElementById('saved-videos').replaceChildren();
     document.getElementById('videos-status').textContent = '세 해의 시작과 마무리를 연결하고 있어요…';
@@ -1006,7 +1008,7 @@ class DiaryApp {
     const preventClose=e=>e.preventDefault(); dialog.addEventListener('cancel',preventClose);
     this.requestInProgress = true; document.getElementById('close-videos').disabled = true;
     try {
-      const response = await fetch('/api/three-year-video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:entries.map(e=>({date:e.date,content_hash:e.content_hash})),consent:true,music:this.selectedMusic('three-year-music'),narration:this.wantsNarration('three-year-narration')})});
+      const response = await fetch('/api/three-year-video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:entries.map(e=>({date:e.date,content_hash:e.content_hash})),consent:true,narration:this.narrationAvailable === true})});
       const data = await response.json();
       if (!response.ok) throw Object.assign(new Error(data.error || '3년 영상을 만들지 못했어요.'), {free: (response.status === 400 || response.status === 409) && data.may_charge !== true});
       await this.loadSavedVideos(entries[0].date);

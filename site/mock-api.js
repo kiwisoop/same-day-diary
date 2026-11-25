@@ -50,7 +50,8 @@
     if (!saved) return {date, content: '', content_hash: null, image_path: null, image_content_hash: null, is_demo: false, image_stale: false, updated_at: null};
     return {...saved, image_stale: !!saved.image_path && saved.image_content_hash !== saved.content_hash};
   }
-  const now = () => new Date().toISOString();
+  // Korean time, like the local server, so '만듦' times on saved shorts match the clock.
+  const now = () => new Date(Date.now() + 9 * 3600e3).toISOString().replace('Z', '+09:00');
 
   async function handle(method, url, body) {
     const path = url.pathname;
